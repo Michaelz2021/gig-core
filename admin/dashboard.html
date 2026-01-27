@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gig-Core 관리자 대시보드</title>
+    <link rel="stylesheet" href="/admin/css/style.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                    </svg>
+                </div>
+                <h2>Gig-Core Admin</h2>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="#overview" class="nav-item active" data-section="overview">
+                    <span>📊</span> 개요
+                </a>
+                <a href="#pending-bids" class="nav-item" data-section="pending-bids">
+                    <span>⏳</span> 입찰 대기
+                </a>
+                <a href="#contracted" class="nav-item" data-section="contracted">
+                    <span>📝</span> 계약 완료
+                </a>
+                <a href="#in-progress" class="nav-item" data-section="in-progress">
+                    <span>🚀</span> 진행 중
+                </a>
+                <a href="#completed" class="nav-item" data-section="completed">
+                    <span>✅</span> 완료
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <button id="logoutButton" class="logout-button">
+                    <span>🚪</span> 로그아웃
+                </button>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="dashboard-header">
+                <h1 id="pageTitle">대시보드 개요</h1>
+                <div class="user-info">
+                    <span id="userEmail"></span>
+                </div>
+            </header>
+            
+            <!-- Overview Section -->
+            <section id="overview" class="dashboard-section active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">👥</div>
+                        <div class="stat-content">
+                            <h3>총 사용자</h3>
+                            <p class="stat-value" id="totalUsers">-</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🔨</div>
+                        <div class="stat-content">
+                            <h3>제공자</h3>
+                            <p class="stat-value" id="totalProviders">-</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🛒</div>
+                        <div class="stat-content">
+                            <h3>소비자</h3>
+                            <p class="stat-value" id="totalConsumers">-</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⏳</div>
+                        <div class="stat-content">
+                            <h3>입찰 대기</h3>
+                            <p class="stat-value" id="awaitingBids">-</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📝</div>
+                        <div class="stat-content">
+                            <h3>계약 완료</h3>
+                            <p class="stat-value" id="contractedProjects">-</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🚀</div>
+                        <div class="stat-content">
+                            <h3>진행 중</h3>
+                            <p class="stat-value" id="inProgressProjects">-</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-content">
+                            <h3>완료</h3>
+                            <p class="stat-value" id="completedProjects">-</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="recent-activity">
+                    <h2>최근 활동</h2>
+                    <div id="recentActivity" class="activity-list">
+                        <p class="loading">데이터를 불러오는 중...</p>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Pending Bids Section -->
+            <section id="pending-bids" class="dashboard-section">
+                <h2>입찰 대기 중인 프로젝트</h2>
+                <div id="pendingBidsList" class="project-list">
+                    <p class="loading">데이터를 불러오는 중...</p>
+                </div>
+            </section>
+            
+            <!-- Contracted Section -->
+            <section id="contracted" class="dashboard-section">
+                <h2>계약 완료된 프로젝트</h2>
+                <div id="contractedList" class="project-list">
+                    <p class="loading">데이터를 불러오는 중...</p>
+                </div>
+            </section>
+            
+            <!-- In Progress Section -->
+            <section id="in-progress" class="dashboard-section">
+                <h2>진행 중인 프로젝트</h2>
+                <div id="inProgressList" class="project-list">
+                    <p class="loading">데이터를 불러오는 중...</p>
+                </div>
+            </section>
+            
+            <!-- Completed Section -->
+            <section id="completed" class="dashboard-section">
+                <h2>완료된 프로젝트</h2>
+                <div id="completedList" class="project-list">
+                    <p class="loading">데이터를 불러오는 중...</p>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <script src="/admin/js/dashboard.js"></script>
+</body>
+</html>
+

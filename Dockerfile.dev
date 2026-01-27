@@ -1,0 +1,15 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 패키지 파일 복사 및 의존성 설치
+COPY package*.json ./
+RUN npm ci
+
+# 소스 코드는 볼륨으로 마운트되므로 복사하지 않음
+
+EXPOSE 3000
+
+# 개발 모드로 실행 (ts-node-dev 사용)
+CMD ["npm", "run", "start:dev"]
+
