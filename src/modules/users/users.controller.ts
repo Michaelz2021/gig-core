@@ -29,6 +29,7 @@ import { UserDeviceTokenService } from './services/user-device-token.service';
 import { ProviderRankingService } from './services/provider-ranking.service';
 import { ProviderAdService } from './services/provider-ad.service';
 import { User } from './entities/user.entity';
+import { Provider } from './entities/provider.entity';
 import { UserBankAccount } from './entities/user-bank-account.entity';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
@@ -276,6 +277,21 @@ export class UsersController {
       limit,
       sortBy,
     });
+  }
+
+  @Get('providers_profile/:id')
+  @ApiOperation({
+    summary: 'Get provider table data by provider id',
+    description:
+      'providers 테이블 기준으로 특정 Provider의 원본 데이터를 조회합니다. (User Profile 이 아니라 Provider 테이블 데이터)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Provider table data retrieved successfully',
+    type: Provider,
+  })
+  async getProviderTableProfile(@Param('id') providerId: string) {
+    return this.usersService.findOneProvider(providerId);
   }
 
   @Get(':id')
