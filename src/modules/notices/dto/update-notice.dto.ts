@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsEnum, IsString, IsArray, IsBoolean, IsDateString } from 'class-validator';
+import { IsOptional, IsEnum, IsString, IsArray, IsBoolean, IsDate } from 'class-validator';
+import { Type } from 'class-transformer';
 import { NoticeType } from '../entities/notice.entity';
 
 export class UpdateNoticeDto {
@@ -35,7 +36,8 @@ export class UpdateNoticeDto {
   isActive?: boolean;
 
   @ApiProperty({ required: false })
-  @IsDateString()
   @IsOptional()
+  @Type(() => Date)
+  @IsDate()
   publishedAt?: Date;
 }

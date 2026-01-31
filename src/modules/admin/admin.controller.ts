@@ -4,6 +4,7 @@ import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import { CreateServiceCategoryDto } from '../services/dto/create-service-category.dto';
+import { NoticeType } from '../notices/entities/notice.entity';
 
 @ApiTags('admin')
 @Controller('admin')
@@ -17,6 +18,20 @@ export class AdminController {
   @ApiOkResponse({ description: 'Dashboard statistics returned' })
   async getDashboard(@GetUser() user: any) {
     return this.adminService.getDashboardStats();
+  }
+
+  @Get('notices')
+  @ApiOperation({ summary: 'Get notices list (admin)' })
+  @ApiQuery({ name: 'type', required: false, enum: NoticeType, description: 'Filter by type (notice or news)' })
+  @ApiQuery({ name: 'isActive', required: false, type: Boolean, description: 'Filter by active status' })
+  @ApiOkResponse({ description: 'Notices list returned' })
+  async getNotices(
+    @Query('type') type?: NoticeType,
+    @Query('isActive') isActive?: string,
+  ) {
+    const isActiveBool = isActive === 'true' ? true : isActive === 'false' ? false : undefined;
+    const items = await this.adminService.getNotices(type, isActiveBool);
+    return { items, total: items.length };
   }
 
   @Get('projects/pending-bids')

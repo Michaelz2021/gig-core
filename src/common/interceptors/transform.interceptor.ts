@@ -29,6 +29,9 @@ export class TransformInterceptor<T>
         const response = ctx.getResponse();
         const statusCode = response.statusCode;
 
+        // Swagger 등에서 실제 성공 여부를 헤더로 구분할 수 있도록 설정
+        response.setHeader('X-Api-Status', 'success');
+
         // If data already has success field, return as is
         if (data && typeof data === 'object' && 'success' in data) {
           return data;

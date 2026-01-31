@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsEnum, IsString, IsOptional, IsArray, IsBoolean, IsDateString } from 'class-validator';
+import { IsNotEmpty, IsEnum, IsString, IsOptional, IsArray, IsBoolean, IsDate } from 'class-validator';
+import { Type } from 'class-transformer';
 import { NoticeType } from '../entities/notice.entity';
 
 export class CreateNoticeDto {
@@ -53,9 +54,10 @@ export class CreateNoticeDto {
   @ApiProperty({ 
     example: '2025-01-15T10:00:00Z', 
     required: false,
-    description: 'Published date (optional)' 
+    description: 'Published date (optional, ISO 8601 string)' 
   })
-  @IsDateString()
   @IsOptional()
+  @Type(() => Date)
+  @IsDate()
   publishedAt?: Date;
 }

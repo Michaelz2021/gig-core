@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiOkResponse, ApiBearerAuth, ApiQuery, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiOkResponse, ApiResponse, ApiBearerAuth, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { NoticesService } from './notices.service';
 import { CreateNoticeDto } from './dto/create-notice.dto';
 import { UpdateNoticeDto } from './dto/update-notice.dto';
@@ -19,10 +19,17 @@ export class NoticesController {
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Create notice (Admin only)' })
-  @ApiOkResponse({ 
-    description: 'Notice created successfully',
+  @ApiOperation({
+    summary: 'Create notice (Admin only)',
+    description: '성공/실패 구분: Execute 후 Response headers 에서 X-Api-Status 를 보세요. success = 성공(200), error = 실패(401 등). body.success 가 true 이면 성공, false 이면 실패.',
+  })
+  @ApiOkResponse({
+    description: '성공 — HTTP 200. body: { success: true, statusCode: 200, data: 공지객체 }',
     type: NoticeResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: '실패 — 토큰 없음/만료. body: { statusCode: 401, message: "Unauthorized" }. 상단 Authorize에 로그인 후 받은 accessToken 입력 후 다시 시도.',
   })
   create(@Body() createNoticeDto: CreateNoticeDto, @GetUser() user: any) {
     return this.noticesService.create(createNoticeDto, user.id);

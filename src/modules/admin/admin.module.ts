@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
+import { NoticesModule } from '../notices/notices.module';
 import { Auction } from '../matching/entities/auction.entity';
 import { Booking } from '../bookings/entities/booking.entity';
 import { User } from '../users/entities/user.entity';
@@ -17,7 +18,10 @@ import { Provider } from '../users/entities/provider.entity';
 import { Portfolio } from '../users/entities/portfolio.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Auction, Booking, User, Escrow, Transaction, Wallet, WalletTransaction, Service, ServiceCategory, UserProfile, AuctionBid, Provider, Portfolio])],
+  imports: [
+    TypeOrmModule.forFeature([Auction, Booking, User, Escrow, Transaction, Wallet, WalletTransaction, Service, ServiceCategory, UserProfile, AuctionBid, Provider, Portfolio]),
+    NoticesModule,
+  ],
   controllers: [AdminController],
   providers: [AdminService],
   exports: [AdminService],

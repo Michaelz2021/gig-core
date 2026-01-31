@@ -16,35 +16,13 @@ async function bootstrap() {
   const port = configService.get<number>('PORT', 3000);
   const apiPrefix = configService.get<string>('API_PREFIX', 'api/v1');
   
-  // IMPORTANT: Serve static files for admin dashboard and uploads BEFORE global prefix
-  // This ensures /admin and /uploads routes are accessible without the API prefix
-  const adminPath = join(__dirname, '..', 'admin');
+  // Static files (BEFORE setGlobalPrefix): uploads only. All front UI is served by gig-front (/var/www/gig-front, port 5173).
   const uploadsPath = join(__dirname, '..', 'uploads');
   const express = require('express');
-  
-  // Get the underlying Express instance
   const expressApp = app.getHttpAdapter().getInstance();
-  
-  // Serve uploads directory as static files (BEFORE setGlobalPrefix)
-  // This allows /uploads/* to be accessed directly
+
   expressApp.use('/uploads', express.static(uploadsPath));
-  
-  // Serve static files with index.html as default
-  // This must be done BEFORE setGlobalPrefix
-  expressApp.use('/admin', express.static(adminPath, { 
-    index: 'index.html',
-    extensions: ['html'],
-  }));
-  
-  // Explicitly handle /admin and /admin/ routes
-  expressApp.get('/admin', (req, res) => {
-    res.sendFile(join(adminPath, 'index.html'));
-  });
-  
-  expressApp.get('/admin/', (req, res) => {
-    res.sendFile(join(adminPath, 'index.html'));
-  });
-  
+
   // Global prefix (only applies to API routes registered after this)
   // Static files served above will NOT be affected by this prefix
   app.setGlobalPrefix(apiPrefix);
@@ -53,13 +31,15 @@ async function bootstrap() {
   // 프론트엔드와 백엔드가 분리되어 있으므로 CORS 설정 필요
   const corsOrigin = configService.get<string>('CORS_ORIGIN', '*').split(',');
   const allowedOrigins = [
-    'http://localhost:5173',      // 프론트엔드 개발 서버
-    'http://43.201.114.64:5173',  // 프론트엔드 프로덕션
-    ...corsOrigin.filter(origin => origin !== '*'), // 기존 설정 유지
+    'http://localhost:5173',       // 프론트엔드 개발 서버
+    'http://localhost:3000',     // Swagger/API 같은 서버 (로컬)
+    'http://43.201.114.64:5173', // 프론트엔드 프로덕션
+    'http://43.201.114.64:3000', // Swagger/API 같은 서버 (원격)
+    ...corsOrigin.filter(origin => origin !== '*'),
   ];
-  
+
   app.enableCors({
-    origin: allowedOrigins.length > 0 ? allowedOrigins : '*',
+    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -87,7 +67,10 @@ async function bootstrap() {
   // Swagger (OpenAPI)
   const swaggerConfig = new DocumentBuilder()
     .setTitle('AI TrustTrade Core API')
-    .setDescription('API documentation for AI TrustTrade Core Service')
+    .setDescription(
+      'API documentation for AI TrustTrade Core Service.\n\n' +
+      '**401 방지 (보호된 API):** 1) POST /api/v1/auth/login 으로 accessToken 발급 → 2) 상단 **Authorize** 클릭 후 accessToken **만** 붙여넣기 (Bearer 입력 금지) → 3) **Authorize** → **Close** 후 요청 실행.',
+    )
     .setVersion('1.0.0')
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'access-token')
     .build();
@@ -95,7 +78,10 @@ async function bootstrap() {
     operationIdFactory: (controllerKey: string, methodKey: string) => methodKey,
   });
   SwaggerModule.setup('api-docs', app, swaggerDocument, {
-    swaggerOptions: { persistAuthorization: true },
+    swaggerOptions: {
+      persistAuthorization: true,
+      docExpansion: 'list',
+    },
   });
   
   await app.listen(port);

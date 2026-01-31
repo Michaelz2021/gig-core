@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Auction, AuctionStatus } from '../matching/entities/auction.entity';
 import { Booking, BookingStatus } from '../bookings/entities/booking.entity';
 import { User, UserType } from '../users/entities/user.entity';
@@ -15,6 +15,8 @@ import { AuctionBid } from '../matching/entities/auction-bid.entity';
 import { Provider } from '../users/entities/provider.entity';
 import { Portfolio } from '../users/entities/portfolio.entity';
 import { CreateServiceCategoryDto } from '../services/dto/create-service-category.dto';
+import { NoticesService } from '../notices/notices.service';
+import { NoticeType } from '../notices/entities/notice.entity';
 
 @Injectable()
 export class AdminService {
@@ -45,7 +47,12 @@ export class AdminService {
     private readonly providerRepository: Repository<Provider>,
     @InjectRepository(Portfolio)
     private readonly portfolioRepository: Repository<Portfolio>,
+    private readonly noticesService: NoticesService,
   ) {}
+
+  async getNotices(type?: NoticeType, isActive?: boolean) {
+    return this.noticesService.findAll(type, isActive);
+  }
 
   async getDashboardStats() {
     const [totalUsers, providers, consumers] = await Promise.all([
@@ -61,8 +68,9 @@ export class AdminService {
       this.auctionRepository.count({ where: { status: AuctionStatus.CANCELLED } }),
     ]);
 
+    // DB booking_status_enum: pending_payment, pending_acceptance, confirmed, in_progress, awaiting_confirmation, completed, cancelled, disputed (no 'pending')
     const [pending, confirmed, inProgressBookings, completedBookings, cancelledBookings] = await Promise.all([
-      this.bookingRepository.count({ where: { status: BookingStatus.PENDING } }),
+      this.bookingRepository.count({ where: { status: In([BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_ACCEPTANCE]) } }),
       this.bookingRepository.count({ where: { status: BookingStatus.CONFIRMED } }),
       this.bookingRepository.count({ where: { status: BookingStatus.IN_PROGRESS } }),
       this.bookingRepository.count({ where: { status: BookingStatus.COMPLETED } }),

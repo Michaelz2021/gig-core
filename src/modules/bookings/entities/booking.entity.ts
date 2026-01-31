@@ -16,12 +16,15 @@ import { AuctionBid } from '../../matching/entities/auction-bid.entity';
 
 export enum BookingStatus {
   PENDING_PAYMENT = 'pending_payment',
+  PENDING_ACCEPTANCE = 'pending_acceptance',
+  AWAITING_CONFIRMATION = 'awaiting_confirmation',
   CONFIRMED = 'confirmed',
   IN_PROGRESS = 'in_progress',
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
   DISPUTED = 'disputed',
-  PENDING = 'pending', // Alias for backward compatibility
+  /** @deprecated DB has no 'pending'; use PENDING_PAYMENT or PENDING_ACCEPTANCE */
+  PENDING = 'pending',
 }
 
 @Entity('bookings')
@@ -102,12 +105,12 @@ export class Booking {
   @Column({ name: 'task', type: 'text', nullable: true })
   task?: string; // 서비스 작업 내용 (계약서에서 명문화될 수 있는 경우)
 
-  // 상태
+  // 상태 (DB booking_status_enum: pending_payment, pending_acceptance, confirmed, in_progress, awaiting_confirmation, completed, cancelled, disputed)
   @Column({
     name: 'status',
     type: 'enum',
     enum: BookingStatus,
-    default: BookingStatus.PENDING,
+    default: BookingStatus.PENDING_PAYMENT,
   })
   status: BookingStatus;
 

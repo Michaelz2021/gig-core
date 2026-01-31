@@ -117,4 +117,15 @@ export class UserDeviceTokenService {
       order: { lastUsedAt: 'DESC' },
     });
   }
+
+  /**
+   * 전체 활성 FCM 토큰 조회 (전체 공지 등 브로드캐스트용)
+   */
+  async getAllActiveFcmTokens(): Promise<string[]> {
+    const tokens = await this.deviceTokenRepository.find({
+      where: { isActive: true },
+      select: ['fcmToken'],
+    });
+    return tokens.map((t) => t.fcmToken).filter((t) => t && t.trim().length > 0);
+  }
 }

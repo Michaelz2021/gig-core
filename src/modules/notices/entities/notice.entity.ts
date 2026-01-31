@@ -36,16 +36,16 @@ export class Notice {
   @Column({ type: 'jsonb', nullable: true })
   images: string[]; // 이미지 URL 배열
 
-  @Column({ default: true })
+  @Column({ name: 'isActive', default: true })
   isActive: boolean; // 활성화 여부
 
-  @Column({ type: 'int', default: 0 })
+  @Column({ name: 'viewCount', type: 'int', default: 0 })
   viewCount: number; // 조회수
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ name: 'createdBy', type: 'uuid', nullable: true })
   createdBy: string; // 작성자 ID (관리자)
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ name: 'publishedAt', type: 'timestamp', nullable: true })
   publishedAt: Date; // 발행일 (선택사항)
 
   @CreateDateColumn({ name: 'created_at' })

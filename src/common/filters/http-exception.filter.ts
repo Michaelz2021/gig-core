@@ -32,7 +32,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message = exception.message;
     }
 
-    const errorResponse = {
+    const errorResponse: Record<string, unknown> = {
       success: false,
       statusCode: status,
       timestamp: new Date().toISOString(),
@@ -41,6 +41,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message,
       ...(errors && { errors }),
     };
+    if (status === 401) {
+      const hasAuth = !!request.headers?.authorization;
+      errorResponse.hint =
+        hasAuth
+          ? 'Token invalid or expired. Log in again and use the new accessToken.'
+          : 'No Authorization header. In Swagger: click Authorize, paste only the JWT (no "Bearer "), then try again. Try incognito or disable browser extensions.';
+    }
+
+    // Swagger 등에서 실제 성공/실패를 헤더로 구분할 수 있도록 설정 (success = 2xx, error = 4xx/5xx)
+    response.setHeader('X-Api-Status', 'error');
 
     console.error('Exception:', {
       ...errorResponse,
