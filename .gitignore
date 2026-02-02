@@ -18,7 +18,8 @@ build/
 # .env.backup*
 
 # Firebase / service account keys (do NOT commit)
-# gig-market-85c5e-firebase-adminsdk-fbsvc-*.json
+gig-market-85c5e-firebase-adminsdk-fbsvc-*.json
+**/gig-market-*-firebase-adminsdk-*.json
 
 # Logs
 logs/

@@ -31,76 +31,56 @@ export class Notification {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
   @ManyToOne(() => User)
-  @JoinColumn({ name: 'userId' })
+  @JoinColumn({ name: 'user_id' })
   user: User;
 
+  /** DB 컬럼: type (varchar). notificationType 은 type 과 동일 값 유지 */
   @Column({
-    type: 'enum',
-    enum: NotificationType,
+    name: 'type',
+    type: 'varchar',
+    length: 50,
   })
-  notificationType: NotificationType; // 알림 유형
+  notificationType: NotificationType;
 
   @Column()
-  title: string; // 알림 제목
+  title: string;
 
   @Column({ type: 'text' })
-  message: string; // 알림 내용
+  message: string;
 
-  // 링크 정보
-  @Column({ nullable: true })
-  actionUrl: string; // 액션 URL
+  @Column({ name: 'action_url', nullable: true })
+  actionUrl: string;
 
-  @Column({ nullable: true })
-  relatedEntityType: string; // 관련 엔티티 유형
+  @Column({ name: 'related_type', nullable: true })
+  relatedEntityType: string;
 
-  @Column({ type: 'uuid', nullable: true })
-  relatedEntityId: string; // 관련 엔티티 ID
+  @Column({ name: 'related_id', type: 'uuid', nullable: true })
+  relatedEntityId: string;
 
-  // 우선순위
-  @Column({
-    type: 'enum',
-    enum: NotificationPriority,
-    default: NotificationPriority.NORMAL,
-  })
-  priority: NotificationPriority;
+  @Column({ name: 'is_read', default: false })
+  isRead: boolean;
 
-  // 상태
-  @Column({ default: false })
-  isRead: boolean; // 읽음 여부
+  @Column({ name: 'read_at', type: 'timestamp', nullable: true })
+  readAt: Date;
 
-  @Column({ type: 'timestamp', nullable: true })
-  readAt: Date; // 읽은 시각
+  @Column({ name: 'sent_via_push', default: false })
+  sentViaPush: boolean;
 
-  // 전송 채널
-  @Column({ default: false })
-  sentViaPush: boolean; // 푸시 알림 전송 여부
+  @Column({ name: 'sent_via_email', default: false })
+  sentViaEmail: boolean;
 
-  @Column({ default: false })
-  sentViaEmail: boolean; // 이메일 전송 여부
+  @Column({ name: 'sent_via_sms', default: false })
+  sentViaSms: boolean;
 
-  @Column({ default: false })
-  sentViaSms: boolean; // SMS 전송 여부
-
-  // 만료
-  @Column({ type: 'timestamp', nullable: true })
-  expiresAt: Date; // 만료 시각
-
-  // 하위 호환성
-  @Column({
-    type: 'enum',
-    enum: NotificationType,
-    nullable: true,
-  })
-  type: NotificationType; // 하위 호환성 유지
-
-  @Column({ type: 'jsonb', nullable: true })
-  metadata: Record<string, any>; // 메타데이터
-
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
+
+  // 하위 호환 (DB에 없음, insert/update 제외)
+  @Column({ type: 'enum', enum: NotificationType, nullable: true, insert: false, update: false })
+  type?: NotificationType;
 }
 

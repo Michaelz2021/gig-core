@@ -5,13 +5,18 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import { CreateServiceCategoryDto } from '../services/dto/create-service-category.dto';
 import { NoticeType } from '../notices/entities/notice.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/entities/notification.entity';
 
 @ApiTags('admin')
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth('access-token')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   @Get('dashboard')
   @ApiOperation({ summary: 'Get admin dashboard statistics' })
@@ -32,6 +37,27 @@ export class AdminController {
     const isActiveBool = isActive === 'true' ? true : isActive === 'false' ? false : undefined;
     const items = await this.adminService.getNotices(type, isActiveBool);
     return { items, total: items.length };
+  }
+
+  @Get('notifications')
+  @ApiOperation({ summary: 'Get all notifications (admin)' })
+  @ApiQuery({ name: 'type', required: false, enum: NotificationType })
+  @ApiQuery({ name: 'isRead', required: false, type: Boolean })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiOkResponse({ description: 'Notifications list returned' })
+  async getNotifications(
+    @Query('type') type?: NotificationType,
+    @Query('isRead') isRead?: boolean,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.notificationsService.findAll(
+      type,
+      isRead,
+      page ?? 1,
+      limit ?? 20,
+    );
   }
 
   @Get('projects/pending-bids')

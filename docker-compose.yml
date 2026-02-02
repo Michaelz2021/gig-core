@@ -27,6 +27,31 @@ services:
       timeout: 3s
       retries: 5
 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      SCRIPT_NAME: /pgadmin4
+    expose:
+      - "80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
+
+  pgadmin-proxy:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./docker/nginx-pgadmin.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - pgadmin
+    profiles:
+      - tools
+
   api:
     build:
       context: .

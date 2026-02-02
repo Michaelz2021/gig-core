@@ -23,6 +23,7 @@ import {
   ApiQuery,
   ApiBody,
   ApiConsumes,
+  ApiParam,
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { UserDeviceTokenService } from './services/user-device-token.service';
@@ -39,9 +40,10 @@ import { PortfolioSubmissionDto } from './dto/portfolio-submission.dto';
 import { RegisterDeviceTokenDto } from './dto/register-device-token.dto';
 import { CreateBankAccountDto } from './dto/create-bank-account.dto';
 import { CreateProviderAdDto } from './dto/create-provider-ad.dto';
+import { UpdateProviderAdDto } from './dto/update-provider-ad.dto';
 import { GetProvidersDto } from './dto/get-providers.dto';
 import { TopTierProvidersResponseDto } from './dto/top-tier-provider-response.dto';
-import { ProviderAdsListResponseDto } from './dto/provider-ad-response.dto';
+import { ProviderAdsListResponseDto, ProviderAdResponseDto } from './dto/provider-ad-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
@@ -218,6 +220,56 @@ export class UsersController {
   })
   async getProviderAds() {
     return this.providerAdService.findAll();
+  }
+
+  @Get('providers/ads/:id')
+  @ApiOperation({ summary: 'Get provider ad by ID' })
+  @ApiParam({ name: 'id', description: 'Provider ad UUID' })
+  @ApiResponse({ status: 200, description: 'Provider ad retrieved successfully', type: ProviderAdResponseDto })
+  @ApiResponse({ status: 404, description: 'Provider ad not found' })
+  async getProviderAdById(@Param('id') id: string) {
+    return this.providerAdService.findOne(id);
+  }
+
+  @Post('providers/ads')
+  @ApiOperation({
+    summary: 'Create provider ad',
+    description: '새로운 서비스 제공자 홍보 광고를 등록합니다.',
+  })
+  @ApiBody({ type: CreateProviderAdDto })
+  @ApiResponse({ status: 201, description: 'Provider ad created successfully', type: ProviderAdResponseDto })
+  @ApiResponse({ status: 404, description: 'Provider not found' })
+  async createProviderAd(@Body() createProviderAdDto: CreateProviderAdDto) {
+    return this.providerAdService.create(createProviderAdDto);
+  }
+
+  @Patch('providers/ads/:id')
+  @ApiOperation({
+    summary: 'Update provider ad',
+    description: '기존 광고 정보를 수정합니다.',
+  })
+  @ApiParam({ name: 'id', description: 'Provider ad UUID' })
+  @ApiBody({ type: UpdateProviderAdDto })
+  @ApiResponse({ status: 200, description: 'Provider ad updated successfully', type: ProviderAdResponseDto })
+  @ApiResponse({ status: 404, description: 'Provider ad or provider not found' })
+  async updateProviderAd(@Param('id') id: string, @Body() updateProviderAdDto: UpdateProviderAdDto) {
+    return this.providerAdService.update(id, updateProviderAdDto);
+  }
+
+  @Delete('providers/ads/:id')
+  @ApiOperation({
+    summary: 'Delete provider ad',
+    description: '광고를 삭제합니다.',
+  })
+  @ApiParam({ name: 'id', description: 'Provider ad UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Provider ad deleted successfully',
+    schema: { type: 'object', properties: { deleted: { type: 'boolean', example: true }, id: { type: 'string', example: 'uuid' } }, required: ['deleted', 'id'] },
+  })
+  @ApiResponse({ status: 404, description: 'Provider ad not found' })
+  async deleteProviderAd(@Param('id') id: string) {
+    return this.providerAdService.remove(id);
   }
 
   @Get('providers')

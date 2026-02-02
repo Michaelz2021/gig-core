@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { ProviderAd } from '../entities/provider-ad.entity';
 import { Provider } from '../entities/provider.entity';
 import { CreateProviderAdDto } from '../dto/create-provider-ad.dto';
+import { UpdateProviderAdDto } from '../dto/update-provider-ad.dto';
 
 @Injectable()
 export class ProviderAdService {
@@ -116,6 +117,60 @@ export class ProviderAdService {
         createdAt: 'DESC',
       },
     });
+  }
+
+  /**
+   * ProviderAd 수정
+   */
+  async update(id: string, updateProviderAdDto: UpdateProviderAdDto): Promise<ProviderAd> {
+    const ad = await this.findOne(id);
+
+    if (updateProviderAdDto.providerId != null) {
+      const provider = await this.providerRepository.findOne({
+        where: { id: updateProviderAdDto.providerId },
+      });
+      if (!provider) {
+        throw new NotFoundException(`Provider with ID ${updateProviderAdDto.providerId} not found`);
+      }
+      ad.providerId = updateProviderAdDto.providerId;
+    }
+    if (updateProviderAdDto.backgroundImageUrl !== undefined) ad.backgroundImageUrl = updateProviderAdDto.backgroundImageUrl;
+    if (updateProviderAdDto.providerName !== undefined) ad.providerName = updateProviderAdDto.providerName;
+    if (updateProviderAdDto.serviceArea !== undefined) ad.serviceArea = updateProviderAdDto.serviceArea;
+    if (updateProviderAdDto.serviceCategories !== undefined) ad.serviceCategories = updateProviderAdDto.serviceCategories;
+    if (updateProviderAdDto.promoMessage !== undefined) ad.promoMessage = updateProviderAdDto.promoMessage;
+    if (updateProviderAdDto.promoTitle !== undefined) ad.promoTitle = updateProviderAdDto.promoTitle;
+    if (updateProviderAdDto.hasDiscount !== undefined) ad.hasDiscount = updateProviderAdDto.hasDiscount;
+    if (updateProviderAdDto.discountPercentage !== undefined) ad.discountPercentage = updateProviderAdDto.discountPercentage;
+    if (updateProviderAdDto.discountAmount !== undefined) ad.discountAmount = updateProviderAdDto.discountAmount;
+    if (updateProviderAdDto.discountDescription !== undefined) ad.discountDescription = updateProviderAdDto.discountDescription;
+    if (updateProviderAdDto.discountStartDate !== undefined) {
+      ad.discountStartDate = updateProviderAdDto.discountStartDate ? new Date(updateProviderAdDto.discountStartDate) : null;
+    }
+    if (updateProviderAdDto.discountEndDate !== undefined) {
+      ad.discountEndDate = updateProviderAdDto.discountEndDate ? new Date(updateProviderAdDto.discountEndDate) : null;
+    }
+    if (updateProviderAdDto.startDate !== undefined) {
+      ad.startDate = updateProviderAdDto.startDate ? new Date(updateProviderAdDto.startDate) : null;
+    }
+    if (updateProviderAdDto.endDate !== undefined) {
+      ad.endDate = updateProviderAdDto.endDate ? new Date(updateProviderAdDto.endDate) : null;
+    }
+    if (updateProviderAdDto.actionUrl !== undefined) ad.actionUrl = updateProviderAdDto.actionUrl;
+    if (updateProviderAdDto.actionText !== undefined) ad.actionText = updateProviderAdDto.actionText;
+    if (updateProviderAdDto.priority !== undefined) ad.priority = updateProviderAdDto.priority;
+    if (updateProviderAdDto.isActive !== undefined) ad.isActive = updateProviderAdDto.isActive;
+
+    return await this.providerAdRepository.save(ad);
+  }
+
+  /**
+   * ProviderAd 삭제
+   */
+  async remove(id: string): Promise<{ deleted: true; id: string }> {
+    const ad = await this.findOne(id);
+    await this.providerAdRepository.remove(ad);
+    return { deleted: true, id };
   }
 }
 

@@ -49,20 +49,18 @@ export class NotificationsService {
     message: string,
     metadata?: Record<string, any>,
   ): Promise<Notification> {
-    // 1. 알림을 DB에 저장
+    // 1. 알림을 DB에 저장 (DB: user_id, type, title, message, related_id, related_type, action_url, ...)
     const notification = this.notificationRepository.create({
       userId,
       notificationType: type,
-      type, // 하위 호환성
       title,
       message,
-      metadata,
-      actionUrl: metadata?.actionUrl || null,
-      relatedEntityType: metadata?.relatedEntityType || null,
-      relatedEntityId: metadata?.relatedEntityId || null,
+      actionUrl: metadata?.actionUrl ?? undefined,
+      relatedEntityType: metadata?.relatedEntityType ?? undefined,
+      relatedEntityId: metadata?.relatedEntityId ?? undefined,
     });
 
-    const savedNotification = await this.notificationRepository.save(notification);
+    const savedNotification = await this.notificationRepository.save(notification) as Notification;
 
     // 2. 사용자의 디바이스 토큰 조회 및 FCM 푸시 알림 전송
     try {
@@ -126,6 +124,33 @@ export class NotificationsService {
     return savedNotification;
   }
 
+  /**
+   * 전체 알림 목록 (관리자용). user_id 조건 없이 type, isRead, page, limit 만 적용.
+   */
+  async findAll(
+    type?: NotificationType,
+    isRead?: boolean,
+    page: number = 1,
+    limit: number = 20,
+  ) {
+    const queryBuilder = this.notificationRepository
+      .createQueryBuilder('notification')
+      .orderBy('notification.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (type !== undefined) {
+      queryBuilder.andWhere('notification.notificationType = :type', { type });
+    }
+
+    if (isRead !== undefined) {
+      queryBuilder.andWhere('notification.isRead = :isRead', { isRead });
+    }
+
+    const [items, total] = await queryBuilder.getManyAndCount();
+    return { items, total };
+  }
+
   async findByUser(
     userId: string,
     type?: NotificationType,
@@ -141,7 +166,7 @@ export class NotificationsService {
       .take(limit);
 
     if (type !== undefined) {
-      queryBuilder.andWhere('notification.type = :type', { type });
+      queryBuilder.andWhere('notification.notificationType = :type', { type });
     }
 
     if (isRead !== undefined) {
