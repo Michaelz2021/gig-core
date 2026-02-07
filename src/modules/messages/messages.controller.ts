@@ -71,7 +71,7 @@ export class MessagesController {
   @Get('chats')
   @ApiOperation({ 
     summary: 'Get chat list',
-    description: '채팅 목록을 조회합니다. 각 채팅의 마지막 메시지에 대한 senderId와 receiverId 정보를 포함하여 송신/수신을 명확하게 구분할 수 있습니다.'
+    description: 'Get chat list. Includes senderId/receiverId of last message for each chat.'
   })
   @ApiOkResponse({ 
     description: 'Chat list returned',
@@ -84,14 +84,14 @@ export class MessagesController {
             type: 'object',
             properties: {
               chatId: { type: 'string', format: 'uuid' },
-              participantId: { type: 'string', format: 'uuid', description: '상대방 사용자 ID' },
+              participantId: { type: 'string', format: 'uuid', description: 'Other party user ID' },
               participantName: { type: 'string' },
               participantImage: { type: 'string', nullable: true },
               lastMessage: { type: 'string' },
               lastMessageTime: { type: 'string', format: 'date-time' },
-              lastMessageSenderId: { type: 'string', format: 'uuid', nullable: true, description: '마지막 메시지 송신자 ID' },
-              lastMessageReceiverId: { type: 'string', format: 'uuid', nullable: true, description: '마지막 메시지 수신자 ID' },
-              isLastMessageSentByMe: { type: 'boolean', nullable: true, description: '마지막 메시지가 현재 사용자가 보낸 것인지 여부' },
+              lastMessageSenderId: { type: 'string', format: 'uuid', nullable: true, description: 'Last message sender ID' },
+              lastMessageReceiverId: { type: 'string', format: 'uuid', nullable: true, description: 'Last message receiver ID' },
+              isLastMessageSentByMe: { type: 'boolean', nullable: true, description: 'Whether last message was sent by current user' },
               unreadCount: { type: 'number' },
               isOnline: { type: 'boolean' },
               transactionId: { type: 'string', format: 'uuid', nullable: true },
@@ -108,7 +108,7 @@ export class MessagesController {
   @Get('chats/:chatId/messages')
   @ApiOperation({ 
     summary: 'Get chat messages',
-    description: '특정 채팅방의 메시지 목록을 조회합니다. 각 메시지의 senderId와 receiverId를 포함하여 송신/수신을 명확하게 구분할 수 있습니다.'
+    description: 'Get messages for a chat room. Each message includes senderId and receiverId.'
   })
   @ApiParam({ name: 'chatId', description: 'Chat ID' })
   @ApiQuery({ name: 'page', required: false, type: Number })
@@ -124,14 +124,14 @@ export class MessagesController {
             type: 'object',
             properties: {
               messageId: { type: 'string', format: 'uuid' },
-              senderId: { type: 'string', format: 'uuid', description: '송신자 ID' },
-              receiverId: { type: 'string', format: 'uuid', description: '수신자 ID' },
+              senderId: { type: 'string', format: 'uuid', description: 'Sender ID' },
+              receiverId: { type: 'string', format: 'uuid', description: 'Receiver ID' },
               senderName: { type: 'string' },
               content: { type: 'string' },
               type: { type: 'string' },
               timestamp: { type: 'string', format: 'date-time' },
               isRead: { type: 'boolean' },
-              isSentByMe: { type: 'boolean', description: '현재 사용자가 보낸 메시지인지 여부' },
+              isSentByMe: { type: 'boolean', description: 'Whether message was sent by current user' },
             },
           },
         },

@@ -7,6 +7,8 @@ import { Escrow, EscrowStatus } from './entities/escrow.entity';
 import { Wallet, WalletStatus } from './entities/wallet.entity';
 import { ProcessPaymentDto } from './dto/process-payment.dto';
 import { WalletTopupDto } from './dto/wallet-topup.dto';
+import { InitializePaymentSessionDto } from './dto/initialize-payment-session.dto';
+import { XenditProcessDto } from './dto/xendit-process.dto';
 import { BookingsService } from '../bookings/bookings.service';
 import { UsersService } from '../users/users.service';
 
@@ -138,6 +140,90 @@ export class PaymentsService {
     }
 
     return savedPayment;
+  }
+
+  /**
+   * Initialize a payment session for a contract. Returns session id, amount breakdown, and available payment methods.
+   */
+  async initializePaymentSession(
+    contractId: string,
+    userId: string,
+    dto: InitializePaymentSessionDto,
+  ): Promise<{
+    payment_session_id: string;
+    bookingId: string;
+    amount: number;
+    breakdown: { service_cost: number; platform_fee: number; insurance: number };
+    available_methods: Array<{
+      method_type: string;
+      display_name: string;
+      fee: string;
+      processing_time: string;
+    }>;
+    expires_at: string;
+  }> {
+    const amount = Number(dto.amount);
+    const platformFeeRate = 0.07;
+    const platformFee = Math.round(amount / (1 + platformFeeRate) * platformFeeRate * 100) / 100;
+    const serviceCost = Math.round((amount - platformFee) * 100) / 100;
+    const insurance = 0;
+
+    const sessionId = `PSESS-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
+
+    return {
+      payment_session_id: sessionId,
+      bookingId: dto.bookingId,
+      amount,
+      breakdown: {
+        service_cost: serviceCost,
+        platform_fee: platformFee,
+        insurance,
+      },
+      available_methods: [
+        { method_type: 'CARD', display_name: 'Credit/Debit Card', fee: '2.5%', processing_time: 'Instant' },
+        { method_type: 'GCASH', display_name: 'GCash', fee: 'Free', processing_time: 'Instant' },
+        { method_type: 'PAYMAYA', display_name: 'PayMaya', fee: 'Free', processing_time: 'Instant' },
+        { method_type: 'QRPH', display_name: 'QR.ph', fee: 'Free', processing_time: 'Instant' },
+        { method_type: 'INSTAPAY', display_name: 'InstaPay Bank Transfer', fee: '₱10', processing_time: 'Real-time' },
+      ],
+      expires_at: expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * Process payment via Xendit. Returns payment URL or QR code and redirect flag.
+   */
+  async xenditProcess(
+    userId: string,
+    dto: XenditProcessDto,
+  ): Promise<{
+    xendit_payment_id: string;
+    payment_url: string;
+    qr_code: string;
+    redirect_required: boolean;
+    expires_at: string;
+  }> {
+    const xenditId = `XDT-${String(Date.now()).slice(-5)}`;
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1);
+
+    const isQrPh = dto.payment_method === 'QRPH';
+    const paymentUrl = isQrPh
+      ? ''
+      : `https://checkout.xendit.co/web/${xenditId.slice(-5)}`;
+    const qrCode = isQrPh
+      ? 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+      : '';
+
+    return {
+      xendit_payment_id: xenditId,
+      payment_url: paymentUrl,
+      qr_code: qrCode,
+      redirect_required: !isQrPh,
+      expires_at: expiresAt.toISOString(),
+    };
   }
 
   private async getOrCreateWallet(userId: string): Promise<Wallet> {

@@ -53,7 +53,7 @@ export class MatchingController {
   @Get('auctions/search')
   @ApiOperation({ 
     summary: 'Search auctions',
-    description: '경매를 검색합니다. 여러 필터 조건을 조합하여 사용할 수 있습니다. 결과가 없을 경우 debug 정보가 포함되어 어떤 조건이 문제인지 확인할 수 있습니다.'
+    description: 'Search auctions with combined filters. When no results, debug info shows per-filter counts.'
   })
   @ApiQuery({ name: 'keyword', required: false, description: 'Search in title and description' })
   @ApiQuery({ name: 'category', required: false, description: 'Service category ID (UUID)' })
@@ -70,15 +70,15 @@ export class MatchingController {
       properties: {
         items: {
           type: 'array',
-          description: '검색된 경매 목록',
+          description: 'List of matching auctions',
         },
-        total: { type: 'number', description: '전체 검색 결과 개수' },
+        total: { type: 'number', description: 'Total search result count' },
         page: { type: 'number' },
         limit: { type: 'number' },
         totalPages: { type: 'number' },
         debug: {
           type: 'object',
-          description: '결과가 없을 경우 디버깅 정보 (각 필터 조건별 개수)',
+          description: 'Debug info when no results (per-filter counts)',
           properties: {
             message: { type: 'string' },
             filterBreakdown: {
@@ -156,7 +156,7 @@ export class MatchingController {
   @Post('auctions/:auctionId/select-bid/:bidId')
   @ApiOperation({ 
     summary: 'Select bid and create booking',
-    description: '입찰을 선택하고 자동으로 Booking을 생성합니다. Auction 기반 예약이 생성되며, 결제 완료 후 SmartContract가 자동 생성됩니다.'
+    description: 'Select a bid and create a Booking. Auction-based booking is created; SmartContract is created after payment.'
   })
   @ApiParam({ name: 'auctionId', description: 'Auction ID' })
   @ApiParam({ name: 'bidId', description: 'Bid ID' })
@@ -181,20 +181,20 @@ export class MatchingController {
   // Auction Bids APIs
   @Post('auction-bids')
   @ApiOperation({ 
-    summary: 'Submit bid (견적서 제출)',
-    description: '경매에 대한 견적서를 제출합니다. auctionId, proposedPrice, estimatedDuration(일수), workPlan, portfolioItems(description 포함), proposedStartDate, proposedCompletionDate, additionalComment(optional)를 포함합니다.'
+    summary: 'Submit bid',
+    description: 'Submit a bid for an auction. Include auctionId, proposedPrice, estimatedDuration (days), workPlan, portfolioItems, proposedStartDate, proposedCompletionDate, additionalComment (optional).'
   })
   @ApiOkResponse({ 
     description: 'Bid submitted successfully',
     schema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: '입찰 ID' },
-        auctionId: { type: 'string', description: '경매 ID' },
-        providerId: { type: 'string', description: '제공자 ID' },
-        proposedPrice: { type: 'number', description: '제안 가격' },
-        estimatedDuration: { type: 'number', description: '예상 소요 일수' },
-        workPlan: { type: 'string', description: '작업 계획서' },
+        id: { type: 'string', description: 'Bid ID' },
+        auctionId: { type: 'string', description: 'Auction ID' },
+        providerId: { type: 'string', description: 'Provider ID' },
+        proposedPrice: { type: 'number', description: 'Proposed price' },
+        estimatedDuration: { type: 'number', description: 'Estimated duration (days)' },
+        workPlan: { type: 'string', description: 'Work plan' },
         portfolioItems: {
           type: 'array',
           items: {
@@ -230,8 +230,8 @@ export class MatchingController {
 
   @Get('auction-bids')
   @ApiOperation({ 
-    summary: 'Get bids list (견적서 목록 조회)',
-    description: 'providerId와 status로 견적서 목록을 필터링하여 조회합니다. status는 콤마로 구분된 여러 값을 전달할 수 있습니다 (예: submitted,under_review,selected).'
+    summary: 'Get bids list',
+    description: 'Filter bids by providerId and status. status can be comma-separated (e.g. submitted,under_review,selected).'
   })
   @ApiQuery({ name: 'providerId', required: false, description: 'Provider ID (UUID)' })
   @ApiQuery({ name: 'status', required: false, description: 'Bid status filter (comma-separated: submitted,under_review,shortlisted,selected,rejected)' })
@@ -257,8 +257,8 @@ export class MatchingController {
 
   @Patch('auction-bids/:bidId/status')
   @ApiOperation({
-    summary: 'Update bid status (견적 상태 변경)',
-    description: '견적서의 상태를 변경합니다. under_review, shortlisted, rejected 상태로 변경할 수 있습니다.',
+    summary: 'Update bid status',
+    description: 'Change bid status to under_review, shortlisted, or rejected.',
   })
   @ApiParam({ name: 'bidId', description: 'Bid ID' })
   @ApiOkResponse({

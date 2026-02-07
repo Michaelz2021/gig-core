@@ -7,7 +7,8 @@ import { PhoneValidator } from '../../common/utils/phone-validator';
 export class SmsService {
   private readonly logger = new Logger(SmsService.name);
   private readonly semaphoreApiKey: string;
-  private readonly semaphoreApiUrl = 'https://api.semaphore.co/api/v4/messages';
+  // OTP 전용 엔드포인트 사용
+  private readonly semaphoreApiUrl = 'https://api.semaphore.co/api/v4/otp';
 
   constructor(private readonly configService: ConfigService) {
     this.semaphoreApiKey = this.configService.get<string>('SEMAPHORE_API_KEY') || '';
@@ -43,19 +44,25 @@ export class SmsService {
         throw new Error('SMS service is not configured');
       }
 
+      // OTP 전용 라우트: {otp} 플레이스홀더와 code 파라미터 사용
       const response = await axios.post(this.semaphoreApiUrl, {
         apikey: this.semaphoreApiKey,
         number: normalizedNumber,
-        message: `Your Gig-Market verification code is: ${otpCode}. Valid for 5 minutes. Do not share this code.`,
+        message: 'Your One Time Password is: {otp}. Please use it within 5 minutes.',
+        code: otpCode,
         sendername: 'GigMarket', // 11 characters max
       });
 
       this.logger.log(`OTP sent successfully to ${normalizedNumber}`);
+      this.logger.debug(`Semaphore OTP response: ${JSON.stringify(response.data)}`);
+
+      // 응답은 배열 또는 단일 객체일 수 있으므로 안전하게 파싱
+      const data = Array.isArray(response.data) ? response.data[0] : response.data;
 
       return {
         success: true,
-        messageId: response.data.message_id,
-        status: response.data.status,
+        messageId: data?.message_id,
+        status: data?.status,
       };
     } catch (error) {
       this.logger.error('Semaphore SMS Error:', error.response?.data || error.message);

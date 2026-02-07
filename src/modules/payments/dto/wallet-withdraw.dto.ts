@@ -3,7 +3,7 @@ import { IsNumber, IsNotEmpty, IsString, IsOptional, Min } from 'class-validator
 
 export class WalletWithdrawDto {
   @ApiProperty({
-    description: '출금 금액',
+    description: 'Withdrawal amount',
     example: 1000.00,
     minimum: 0.01,
   })
@@ -13,7 +13,7 @@ export class WalletWithdrawDto {
   amount: number;
 
   @ApiProperty({
-    description: '출금 방법',
+    description: 'Withdrawal method',
     example: 'bank_transfer',
     enum: ['bank_transfer', 'e_wallet', 'cash_pickup'],
     required: false,
@@ -23,7 +23,7 @@ export class WalletWithdrawDto {
   withdrawalMethod?: string;
 
   @ApiProperty({
-    description: '은행명 (은행 계좌 출금 시 필수)',
+    description: 'Bank name (required for bank account withdrawal)',
     example: 'BDO',
     required: false,
   })
@@ -32,7 +32,7 @@ export class WalletWithdrawDto {
   bankName?: string;
 
   @ApiProperty({
-    description: '계좌번호 (은행 계좌 출금 시 필수)',
+    description: 'Account number (required for bank account withdrawal)',
     example: '1234567890',
     required: false,
   })
@@ -41,7 +41,7 @@ export class WalletWithdrawDto {
   accountNumber?: string;
 
   @ApiProperty({
-    description: '예금주명 (은행 계좌 출금 시 필수)',
+    description: 'Account holder name (required for bank account withdrawal)',
     example: 'Juan Dela Cruz',
     required: false,
   })
@@ -50,7 +50,7 @@ export class WalletWithdrawDto {
   accountHolderName?: string;
 
   @ApiProperty({
-    description: 'E-Wallet 계정 (E-Wallet 출금 시 필수)',
+    description: 'E-Wallet account (required for e-wallet withdrawal)',
     example: 'gcash@example.com',
     required: false,
   })
@@ -59,7 +59,7 @@ export class WalletWithdrawDto {
   eWalletAccount?: string;
 
   @ApiProperty({
-    description: '출금 설명 (선택 사항)',
+    description: 'Withdrawal description (optional)',
     example: 'Monthly withdrawal',
     required: false,
   })

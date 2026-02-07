@@ -10,11 +10,15 @@ export class EmailService {
   private readonly sendGridApiUrl = 'https://api.sendgrid.com/v3/mail/send';
 
   constructor(private readonly configService: ConfigService) {
-    this.sendGridApiKey = this.configService.get<string>('SENDGRID_API_KEY') || '';
-    this.sendGridFromEmail = this.configService.get<string>('SENDGRID_FROM_EMAIL') || 'noreply@gigmarket.ph';
-    
+    this.sendGridApiKey = (this.configService.get<string>('SENDGRID_API_KEY') || '').trim();
+    this.sendGridFromEmail = (this.configService.get<string>('SENDGRID_FROM_EMAIL') || 'noreply@gigmarket.ph').trim();
+
     if (!this.sendGridApiKey) {
       this.logger.warn('SENDGRID_API_KEY is not set. Email sending will fail.');
+    }
+    if (!this.sendGridFromEmail) {
+      this.logger.warn('SENDGRID_FROM_EMAIL is not set. Using default.');
+      this.sendGridFromEmail = 'noreply@gigmarket.ph';
     }
   }
 
@@ -35,7 +39,9 @@ export class EmailService {
         throw new Error('Email service is not configured');
       }
 
-      const verificationUrl = `${this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173')}/verify-email?token=${verificationToken}`;
+      // register/verify-otp와 동일하게 백엔드(3000) 사용. 클릭 시 GET /verify-email?token=... → 검증 후 프론트로 리다이렉트
+      const backendPublicUrl = (this.configService.get<string>('BACKEND_PUBLIC_URL') || 'http://localhost:3000').replace(/\/$/, '');
+      const verificationUrl = `${backendPublicUrl}/verify-email?token=${verificationToken}`;
 
       const emailData = {
         personalizations: [
@@ -102,21 +108,94 @@ export class EmailService {
         success: true,
         messageId: response.headers['x-message-id'] || 'sent',
       };
-    } catch (error) {
-      const errorDetails = error.response?.data || error.message;
+    } catch (error: any) {
+      const errMsg = error?.message ?? String(error);
+      const errorDetails = error?.response?.data ?? errMsg;
+      const status = error?.response?.status;
       this.logger.error('SendGrid Email Error:', JSON.stringify(errorDetails, null, 2));
-      this.logger.error('SendGrid Error Status:', error.response?.status);
-      this.logger.error('SendGrid Error Headers:', error.response?.headers);
-      
-      // 이메일 전송 실패는 치명적이지 않으므로 로그만 남기고 계속 진행
-      // (사용자는 나중에 재전송 요청 가능)
-      this.logger.warn(`Failed to send verification email to ${email}. Error: ${error.message}`);
+      if (status != null) this.logger.error('SendGrid Error Status:', status);
+      if (error?.response?.headers) this.logger.error('SendGrid Error Headers:', error.response.headers);
+
+      this.logger.warn(`Failed to send verification email to ${email}. Error: ${errMsg}`);
       this.logger.warn(`[EMAIL NOT SENT] Verification token for ${email}: ${verificationToken}`);
-      
-      // 개발/프로덕션 모두에서 에러를 던지지 않고 계속 진행
+
       return {
         success: false,
-        error: error.message,
+        error: errMsg,
+      };
+    }
+  }
+
+  /**
+   * 시험용 이메일 전송 (관리자 대시보드 등에서 사용)
+   * @param to 수신자 이메일
+   * @returns 전송 결과
+   */
+  async sendTestEmail(to: string): Promise<{
+    success: boolean;
+    messageId?: string;
+    error?: string;
+  }> {
+    try {
+      if (!this.sendGridApiKey) {
+        this.logger.error('SENDGRID_API_KEY is not configured');
+        throw new Error('Email service is not configured');
+      }
+
+      const emailData = {
+        personalizations: [
+          {
+            to: [{ email: to }],
+            subject: '[Gig-Market] Test Email',
+          },
+        ],
+        from: { email: this.sendGridFromEmail, name: 'Gig-Market' },
+        content: [
+          {
+            type: 'text/html',
+            value: `
+              <!DOCTYPE html>
+              <html>
+              <head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;line-height:1.6;color:#333;}.container{max-width:600px;margin:0 auto;padding:20px;}.header{background:#4CAF50;color:white;padding:20px;text-align:center;}.content{padding:20px;background:#f9f9f9;}</style></head>
+              <body>
+                <div class="container">
+                  <div class="header"><h1>Gig-Market Test Email</h1></div>
+                  <div class="content">
+                    <p>Hello,</p>
+                    <p>This is a <strong>test email</strong> for SendGrid integration.</p>
+                    <p>If you received this email, the email sending configuration is working correctly.</p>
+                    <p>Sent at: ${new Date().toISOString()}</p>
+                  </div>
+                </div>
+              </body>
+              </html>
+            `,
+          },
+        ],
+      };
+
+      const response = await axios.post(this.sendGridApiUrl, emailData, {
+        headers: {
+          Authorization: `Bearer ${this.sendGridApiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      this.logger.log(`Test email sent successfully to ${to}`);
+      return {
+        success: true,
+        messageId: response.headers['x-message-id'] || 'sent',
+      };
+    } catch (error: any) {
+      const errMsg = error?.message ?? String(error);
+      const errorDetails = error?.response?.data ?? errMsg;
+      const status = error?.response?.status;
+      this.logger.error('SendGrid Test Email Error:', JSON.stringify(errorDetails, null, 2));
+      if (status != null) this.logger.error('SendGrid Error Status:', status);
+      this.logger.warn(`Failed to send test email to ${to}. Error: ${errMsg}`);
+      return {
+        success: false,
+        error: errMsg,
       };
     }
   }

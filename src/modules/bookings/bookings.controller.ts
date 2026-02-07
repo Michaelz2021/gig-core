@@ -43,7 +43,7 @@ export class BookingsController {
   @Post(':bookingId/reports')
   @ApiOperation({ 
     summary: 'Create work progress report',
-    description: 'Provider가 작업 진행 상황을 보고합니다. Provider만 보고서를 작성할 수 있으며, booking 상태가 confirmed 또는 in_progress인 경우에만 가능합니다. notes, message, 또는 content 중 하나는 필수입니다.',
+    description: 'Provider reports work progress. Only provider can submit; booking status must be confirmed or in_progress. One of notes, message, or content is required.',
     operationId: 'createWorkProgressReport'
   })
   @ApiParam({ 

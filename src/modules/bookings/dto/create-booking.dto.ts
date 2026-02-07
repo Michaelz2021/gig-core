@@ -32,7 +32,7 @@ export class CreateBookingDto {
     zipCode?: string;
   };
 
-  @ApiProperty({ required: false, example: '서비스 작업 내용 (계약서에서 명문화될 수 있는 경우)' })
+  @ApiProperty({ required: false, example: 'Service task (can be specified in contract)' })
   @IsOptional()
   @IsString()
   task?: string;

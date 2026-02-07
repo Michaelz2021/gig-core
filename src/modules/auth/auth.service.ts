@@ -22,6 +22,22 @@ export class AuthService {
   ) {}
 
   async register(registerDto: RegisterDto) {
+    try {
+      return await this.registerInternal(registerDto);
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      if (typeof msg === 'string' && (msg.includes('client is closed') || msg.includes('The client is closed'))) {
+        console.error('[AuthService] Redis client closed during register:', msg);
+        throw new HttpException(
+          { message: 'Registration could not be completed due to a temporary service issue. Please try again in a moment.' },
+          503,
+        );
+      }
+      throw err;
+    }
+  }
+
+  private async registerInternal(registerDto: RegisterDto) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!registerDto.email || !emailRegex.test(registerDto.email)) {
       throw new HttpException(
@@ -126,11 +142,18 @@ export class AuthService {
     if (!emailSent) {
       console.log(`[EMAIL VERIFICATION TOKEN] Email: ${registerDto.email}, Token: ${emailVerificationToken}`);
     }
-    if (this.redisClient) {
-      const otpKey = `otp:${registerDto.phone}`;
-      await this.redisClient.setEx(otpKey, 300, otp);
-      const emailTokenKey = `email_verification:${registerDto.email}`;
-      await this.redisClient.setEx(emailTokenKey, 24 * 60 * 60, emailVerificationToken);
+    const redisReady = this.redisClient && (this.redisClient.isReady === true);
+    if (redisReady) {
+      try {
+        const otpKey = `otp:${registerDto.phone}`;
+        await this.redisClient.setEx(otpKey, 300, otp);
+        const emailTokenKey = `email_verification:${registerDto.email}`;
+        await this.redisClient.setEx(emailTokenKey, 24 * 60 * 60, emailVerificationToken);
+      } catch (redisErr: any) {
+        console.error('[AuthService] Redis unavailable during register (OTP/email token not stored):', redisErr?.message ?? redisErr);
+      }
+    } else if (this.redisClient) {
+      console.warn('[AuthService] Redis client not ready (closed or disconnected); OTP/email token not stored.');
     }
     let validatedServiceCategoryIds: string[] = [];
     if (registerDto.serviceCategoryIds && registerDto.serviceCategoryIds.length > 0) {
@@ -189,16 +212,59 @@ export class AuthService {
       status: UserStatus.ACTIVE,
       serviceCategoryIds: validatedServiceCategoryIds.length > 0 ? validatedServiceCategoryIds : [],
     });
-    return {
-      message: smsSent
+    const message =
+      smsSent && emailSent
         ? 'OTP sent to your phone and verification email sent'
-        : 'Registration successful. Verification email sent. (SMS OTP will be sent later)',
+        : smsSent && !emailSent
+          ? 'OTP sent to your phone. Verification email could not be sent; you can request a new link later.'
+          : !smsSent && emailSent
+            ? 'Registration successful. Verification email sent. (SMS OTP will be sent later)'
+            : 'Registration successful. Verification email could not be sent; you can request a new link later. (SMS OTP will be sent later)';
+
+    return {
+      message,
       phone: registerDto.phone,
       email: registerDto.email,
       smsSent,
+      emailSent,
       otp: process.env.NODE_ENV === 'development' ? otp : undefined,
       emailVerificationToken: process.env.NODE_ENV === 'development' ? emailVerificationToken : undefined,
     };
+  }
+
+  /**
+   * 특정 번호로 테스트 OTP SMS 전송 (Swagger에서 사용)
+   */
+  async sendTestOtp(phone: string) {
+    if (!PhoneValidator.isValidPhilippineMobile(phone)) {
+      throw new BadRequestException({
+        message: 'Test OTP failed: invalid Philippine mobile number format',
+        errors: {
+          phone: 'Phone must be a valid Philippine mobile number in +639XXXXXXXXX, 09XXXXXXXXX, or 9XXXXXXXXX format.',
+        },
+      });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    try {
+      const result = await this.smsService.sendOTP(phone, otp);
+      return {
+        message: 'Test OTP SMS sent',
+        phone,
+        otp: process.env.NODE_ENV === 'development' ? otp : undefined,
+        smsResult: result,
+      };
+    } catch (error: any) {
+      console.error('[AuthService] Failed to send test OTP SMS:', error);
+      throw new HttpException(
+        {
+          message: 'Failed to send test OTP SMS',
+          error: error?.message ?? String(error),
+        },
+        500,
+      );
+    }
   }
 
   async verifyEmail(token: string) {
@@ -238,23 +304,32 @@ export class AuthService {
         };
       }
       if (this.redisClient) {
-        const emailTokenKey = `email_verification:${email}`;
-        const storedToken = await this.redisClient.get(emailTokenKey);
-        if (storedToken && storedToken !== token) {
-          throw new BadRequestException({
-            message: 'Email verification failed: token mismatch',
-            errors: {
-              token: 'Invalid or expired verification token.',
-            },
-          });
+        try {
+          const emailTokenKey = `email_verification:${email}`;
+          const storedToken = await this.redisClient.get(emailTokenKey);
+          if (storedToken && storedToken !== token) {
+            throw new BadRequestException({
+              message: 'Email verification failed: token mismatch',
+              errors: {
+                token: 'Invalid or expired verification token.',
+              },
+            });
+          }
+        } catch (err) {
+          if (err instanceof BadRequestException) throw err;
+          console.error('[AuthService] Redis unavailable during verifyEmail (skip token check):', (err as any)?.message);
         }
       }
       await this.usersService.update(user.id, {
         isEmailVerified: true,
       });
       if (this.redisClient) {
-        const emailTokenKey = `email_verification:${email}`;
-        await this.redisClient.del(emailTokenKey);
+        try {
+          const emailTokenKey = `email_verification:${email}`;
+          await this.redisClient.del(emailTokenKey);
+        } catch {
+          // best-effort
+        }
       }
       return {
         message: 'Email verified successfully',
@@ -284,7 +359,18 @@ export class AuthService {
       });
     }
     const otpKey = `otp:${phone}`;
-    const storedOtp = await this.redisClient.get(otpKey);
+    let storedOtp: string | null;
+    try {
+      storedOtp = await this.redisClient.get(otpKey);
+    } catch (redisErr: any) {
+      console.error('[AuthService] Redis unavailable during verifyOtp:', redisErr?.message ?? redisErr);
+      throw new BadRequestException({
+        message: 'OTP verification failed: service not available',
+        errors: {
+          otp: 'OTP verification service is temporarily unavailable. Please try again later.',
+        },
+      });
+    }
     if (!storedOtp || storedOtp !== otp) {
       throw new BadRequestException({
         message: 'OTP verification failed: invalid or expired code',
@@ -305,7 +391,11 @@ export class AuthService {
     await this.usersService.update(user.id, {
       isPhoneVerified: true,
     });
-    await this.redisClient.del(otpKey);
+    try {
+      await this.redisClient.del(otpKey);
+    } catch {
+      // best-effort; verification already succeeded
+    }
     return {
       message: 'OTP verified successfully',
       user: {
@@ -348,10 +438,15 @@ export class AuthService {
   async refreshToken(refreshToken: string) {
     try {
       if (this.redisClient) {
-        const blacklistedKey = `blacklist:refresh:${refreshToken}`;
-        const isBlacklisted = await this.redisClient.get(blacklistedKey);
-        if (isBlacklisted) {
-          throw new UnauthorizedException('Refresh token has been revoked');
+        try {
+          const blacklistedKey = `blacklist:refresh:${refreshToken}`;
+          const isBlacklisted = await this.redisClient.get(blacklistedKey);
+          if (isBlacklisted) {
+            throw new UnauthorizedException('Refresh token has been revoked');
+          }
+        } catch (err) {
+          if (err instanceof UnauthorizedException) throw err;
+          console.error('[AuthService] Redis unavailable during refreshToken (skip blacklist check):', (err as any)?.message);
         }
       }
       const payload = this.jwtService.verify(refreshToken);
@@ -363,8 +458,12 @@ export class AuthService {
       const accessToken = this.jwtService.sign(newPayload, { expiresIn: '30d' });
       const newRefreshToken = this.jwtService.sign(newPayload, { expiresIn: '90d' });
       if (this.redisClient) {
-        const refreshTokenKey = `refresh_token:${user.id}`;
-        await this.redisClient.setEx(refreshTokenKey, 90 * 24 * 60 * 60, newRefreshToken);
+        try {
+          const refreshTokenKey = `refresh_token:${user.id}`;
+          await this.redisClient.setEx(refreshTokenKey, 90 * 24 * 60 * 60, newRefreshToken);
+        } catch (redisErr: any) {
+          console.error('[AuthService] Redis unavailable during refreshToken (token not stored):', redisErr?.message);
+        }
       }
       return {
         accessToken,

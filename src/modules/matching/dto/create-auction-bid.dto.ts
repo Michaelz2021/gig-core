@@ -3,7 +3,7 @@ import { IsString, IsOptional, IsNumber, IsDateString, IsArray, Min, ValidateNes
 import { Type } from 'class-transformer';
 
 class PortfolioItemDto {
-  @ApiProperty({ description: '포트폴리오 이미지 URL' })
+  @ApiProperty({ description: 'Portfolio image URL' })
   @IsString()
   url: string;
 
@@ -12,34 +12,34 @@ class PortfolioItemDto {
   @IsOptional()
   caption?: string;
 
-  @ApiProperty({ description: '포트폴리오 설명 (quote description)', required: false })
+  @ApiProperty({ description: 'Portfolio description', required: false })
   @IsString()
   @IsOptional()
   description?: string;
 }
 
 export class CreateAuctionBidDto {
-  @ApiProperty({ description: '경매 ID' })
+  @ApiProperty({ description: 'Auction ID' })
   @IsString()
   auctionId: string;
 
-  @ApiProperty({ description: '제안 가격' })
+  @ApiProperty({ description: 'Proposed price' })
   @IsNumber()
   @Min(0)
   proposedPrice: number;
 
-  @ApiProperty({ description: '예상 소요 일수', required: false })
+  @ApiProperty({ description: 'Estimated duration (days)', required: false })
   @IsNumber()
   @IsOptional()
   estimatedDuration?: number;
 
-  @ApiProperty({ description: '작업 계획서 (quote description)', required: false })
+  @ApiProperty({ description: 'Work plan', required: false })
   @IsString()
   @IsOptional()
   workPlan?: string;
 
   @ApiProperty({ 
-    description: '포트폴리오 항목 배열 (quote description 포함)', 
+    description: 'Portfolio items array', 
     type: [PortfolioItemDto],
     required: false 
   })
@@ -49,17 +49,17 @@ export class CreateAuctionBidDto {
   @IsOptional()
   portfolioItems?: PortfolioItemDto[];
 
-  @ApiProperty({ description: '제안 시작 날짜 (ISO 8601)', required: false })
+  @ApiProperty({ description: 'Proposed start date (ISO 8601)', required: false })
   @IsDateString()
   @IsOptional()
   proposedStartDate?: string;
 
-  @ApiProperty({ description: '제안 완료 날짜 (ISO 8601)', required: false })
+  @ApiProperty({ description: 'Proposed completion date (ISO 8601)', required: false })
   @IsDateString()
   @IsOptional()
   proposedCompletionDate?: string;
 
-  @ApiProperty({ description: '추가 코멘트', required: false })
+  @ApiProperty({ description: 'Additional comment', required: false })
   @IsString()
   @IsOptional()
   additionalComment?: string;

@@ -7,6 +7,7 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { LogoutDto } from './dto/logout.dto';
+import { SendTestOtpDto } from './dto/send-test-otp.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
@@ -20,27 +21,27 @@ export class AuthController {
   @Post('register')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: '사용자 등록 (OTP 전송)',
-    description: `새로운 사용자를 등록합니다. 등록 시 OTP가 전화번호로 전송되고 이메일 인증 링크가 이메일로 전송됩니다.
-    
-**필수 필드:**
-- email: 사용자 이메일 주소 (고유값)
-- phone: 필리핀 전화번호 (고유값, 형식: +639XXXXXXXXX, 09XXXXXXXXX, 또는 9XXXXXXXXX)
-- firstName: 이름
-- lastName: 성
-- password: 비밀번호 (최소 8자)
+    summary: 'User registration (sends OTP)',
+    description: `Register a new user. OTP is sent to the phone and email verification link is sent to email.
 
-**선택 필드:**
-- role: 사용자 역할 (consumer, provider, both) - 기본값: consumer
-- serviceCategoryIds: 전문 분야 서비스 카테고리 ID 배열 (최대 3개)
+**Required fields:**
+- email: User email (unique)
+- phone: Philippine phone (unique, format: +639XXXXXXXXX, 09XXXXXXXXX, or 9XXXXXXXXX)
+- firstName: First name
+- lastName: Last name
+- password: Password (min 8 characters)
 
-**응답:**
-- 성공 시: OTP 전송 확인 메시지 및 개발 환경에서만 OTP 코드 반환
-- 실패 시: 상세한 에러 메시지 반환`,
+**Optional fields:**
+- role: User role (consumer, provider, both) - default: consumer
+- serviceCategoryIds: Service category ID array (max 3)
+
+**Response:**
+- Success: OTP sent confirmation; OTP code returned in development only
+- Failure: Detailed error message`,
   })
   @ApiResponse({
     status: 200,
-    description: '등록 성공 - OTP가 전송되었습니다.',
+    description: 'Registration success - OTP sent.',
     schema: {
       type: 'object',
       properties: {
@@ -48,30 +49,31 @@ export class AuthController {
         phone: { type: 'string', example: '+639123456789' },
         email: { type: 'string', example: 'user@example.com' },
         smsSent: { type: 'boolean', example: true },
-        otp: { type: 'string', example: '123456', description: '개발 환경에서만 반환됨' },
-        emailVerificationToken: { type: 'string', example: 'token-here', description: '개발 환경에서만 반환됨' },
+        emailSent: { type: 'boolean', example: true, description: 'Whether the verification email was sent successfully' },
+        otp: { type: 'string', example: '123456', description: 'Returned in development only' },
+        emailVerificationToken: { type: 'string', example: 'token-here', description: 'Returned in development only' },
       },
     },
   })
   @ApiResponse({
     status: 409,
-    description: '이메일이 이미 등록되어 있습니다.',
+    description: 'Email already registered.',
   })
   @ApiResponse({
     status: 410,
-    description: '전화번호가 이미 등록되어 있습니다.',
+    description: 'Phone number already registered.',
   })
   @ApiResponse({
     status: 411,
-    description: '잘못된 이메일 형식입니다.',
+    description: 'Invalid email format.',
   })
   @ApiResponse({
     status: 412,
-    description: '잘못된 전화번호 형식입니다.',
+    description: 'Invalid phone format.',
   })
   @ApiResponse({
     status: 400,
-    description: '잘못된 요청 (서비스 카테고리 ID 유효성 검증 실패 등)',
+    description: 'Bad request (e.g. service category ID validation failed).',
   })
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
@@ -95,6 +97,32 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
   async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
     return this.authService.verifyEmail(verifyEmailDto.token);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('test-send-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Send test OTP SMS to a specific mobile number (for testing via Swagger)',
+    description:
+      'Sends a one-time OTP SMS with an English message to the specified Philippine mobile number, without creating a user.\n' +
+      'Use this for testing SMS delivery. In development environment, the OTP code is also returned in the response.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Test OTP SMS sent',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid phone number format',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Failed to send test OTP SMS',
+  })
+  async sendTestOtp(@Body() dto: SendTestOtpDto) {
+    return this.authService.sendTestOtp(dto.phone);
   }
 
   @Public()

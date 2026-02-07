@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
+import { AuthModule } from '../auth/auth.module';
 import { NoticesModule } from '../notices/notices.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Auction } from '../matching/entities/auction.entity';
@@ -21,6 +22,7 @@ import { Portfolio } from '../users/entities/portfolio.entity';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Auction, Booking, User, Escrow, Transaction, Wallet, WalletTransaction, Service, ServiceCategory, UserProfile, AuctionBid, Provider, Portfolio]),
+    AuthModule,
     NoticesModule,
     NotificationsModule,
   ],

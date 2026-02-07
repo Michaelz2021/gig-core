@@ -13,6 +13,14 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest();
+    const path = request?.url?.split('?')[0] ?? request?.path ?? '';
+
+    // 이메일 인증 링크 클릭은 로그인 전이므로 JWT 없이 허용 (prefix 제외 경로)
+    if (path === '/verify-email' || path.endsWith('/verify-email')) {
+      return true;
+    }
+
     // Check if route is marked as public
     const isPublic = this.reflector.getAllAndOverride<boolean>('isPublic', [
       context.getHandler(),
@@ -24,7 +32,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     }
 
     // Check if token is blacklisted (skip on Redis error so valid tokens still work)
-    const request = context.switchToHttp().getRequest();
     const authHeader = request.headers?.authorization;
 
     if (authHeader && this.redisClient) {

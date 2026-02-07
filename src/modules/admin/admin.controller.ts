@@ -1,9 +1,10 @@
-import { Controller, Get, Put, Param, Query, Body, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiOkResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Param, Query, Body, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiOkResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import { CreateServiceCategoryDto } from '../services/dto/create-service-category.dto';
+import { SendTestEmailDto } from './dto/send-test-email.dto';
 import { NoticeType } from '../notices/entities/notice.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
@@ -23,6 +24,14 @@ export class AdminController {
   @ApiOkResponse({ description: 'Dashboard statistics returned' })
   async getDashboard(@GetUser() user: any) {
     return this.adminService.getDashboardStats();
+  }
+
+  @Post('send-test-email')
+  @ApiOperation({ summary: 'Send test email (admin)' })
+  @ApiBody({ type: SendTestEmailDto, description: '수신 이메일 주소' })
+  @ApiOkResponse({ description: 'Test email sent successfully' })
+  async sendTestEmail(@Body() dto: SendTestEmailDto) {
+    return this.adminService.sendTestEmail(dto.email);
   }
 
   @Get('notices')

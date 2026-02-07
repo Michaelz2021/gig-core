@@ -3,7 +3,7 @@ import { IsNumber, IsPositive, IsOptional, IsString } from 'class-validator';
 
 export class BuyCreditsDto {
   @ApiProperty({
-    description: '구매할 크레딧 수량',
+    description: 'Number of credits to purchase',
     example: 100,
     minimum: 1,
   })
@@ -12,7 +12,7 @@ export class BuyCreditsDto {
   credits: number;
 
   @ApiProperty({
-    description: '구매 사유 (선택사항)',
+    description: 'Purchase reason (optional)',
     example: 'Auction bid credits',
     required: false,
   })
@@ -21,7 +21,7 @@ export class BuyCreditsDto {
   reason?: string;
 
   @ApiProperty({
-    description: '상세 설명 (선택사항)',
+    description: 'Detail description (optional)',
     example: 'Purchased 100 credits for auction bidding',
     required: false,
   })

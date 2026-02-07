@@ -97,7 +97,7 @@ export class UsersController {
   @Post('me/device-token')
   @ApiOperation({
     summary: 'Register device token for push notifications',
-    description: 'FCM 디바이스 토큰을 등록합니다. 앱 모드(consumer/provider)와 플랫폼 정보를 함께 전송해야 합니다.',
+    description: 'Register FCM device token. Send app mode (consumer/provider) and platform info together.',
   })
   @ApiResponse({
     status: 201,
@@ -109,7 +109,7 @@ export class UsersController {
         deviceTokens: {
           type: 'array',
           items: { type: 'string' },
-          description: '해당 사용자의 모든 활성 디바이스 토큰 목록',
+          description: 'List of all active device tokens for the user',
         },
       },
     },
@@ -139,7 +139,7 @@ export class UsersController {
   @Delete('me/device-token/:deviceToken')
   @ApiOperation({
     summary: 'Remove device token',
-    description: '등록된 디바이스 토큰을 제거합니다.',
+    description: 'Remove a registered device token.',
   })
   @ApiResponse({
     status: 200,
@@ -157,7 +157,7 @@ export class UsersController {
   @Get('me/device-tokens')
   @ApiOperation({ 
     summary: 'Get my device tokens',
-    description: '현재 로그인한 사용자의 모든 앱 모드(consumer/provider) 활성 디바이스 토큰 목록을 조회합니다.'
+    description: 'Get all active device tokens for the current user by app mode (consumer/provider).'
   })
   @ApiResponse({ 
     status: 200, 
@@ -168,7 +168,7 @@ export class UsersController {
         deviceTokens: {
           type: 'array',
           items: { type: 'string' },
-          description: '활성 디바이스 토큰 배열',
+          description: 'Array of active device tokens',
         },
       },
     },
@@ -189,13 +189,13 @@ export class UsersController {
   @Get('providers/top-tier')
   @ApiOperation({
     summary: 'Get top tier service providers',
-    description: 'Top Tier 서비스 제공자 목록을 조회합니다. 랭킹 순위에 따라 정렬된 상위 제공자들을 반환합니다.',
+    description: 'Get top tier service providers. Returns providers sorted by ranking.',
   })
   @ApiQuery({
     name: 'limit',
     required: false,
     type: Number,
-    description: '반환할 최대 개수 (기본값: 10, 최대: 10)',
+    description: 'Maximum number to return (default: 10, max: 10)',
     example: 10,
   })
   @ApiResponse({
@@ -211,7 +211,7 @@ export class UsersController {
   @Get('providers/ads')
   @ApiOperation({
     summary: 'Get service provider promotion ads',
-    description: '활성화된 서비스 제공자 홍보 광고 목록을 조회합니다. 노출 기간 내이고 우선순위가 높은 광고부터 반환됩니다.',
+    description: 'Get active service provider promotion ads. Returns ads within display period, ordered by priority.',
   })
   @ApiResponse({
     status: 200,
@@ -234,7 +234,7 @@ export class UsersController {
   @Post('providers/ads')
   @ApiOperation({
     summary: 'Create provider ad',
-    description: '새로운 서비스 제공자 홍보 광고를 등록합니다.',
+    description: 'Create a new service provider promotion ad.',
   })
   @ApiBody({ type: CreateProviderAdDto })
   @ApiResponse({ status: 201, description: 'Provider ad created successfully', type: ProviderAdResponseDto })
@@ -246,7 +246,7 @@ export class UsersController {
   @Patch('providers/ads/:id')
   @ApiOperation({
     summary: 'Update provider ad',
-    description: '기존 광고 정보를 수정합니다.',
+    description: 'Update an existing ad.',
   })
   @ApiParam({ name: 'id', description: 'Provider ad UUID' })
   @ApiBody({ type: UpdateProviderAdDto })
@@ -259,7 +259,7 @@ export class UsersController {
   @Delete('providers/ads/:id')
   @ApiOperation({
     summary: 'Delete provider ad',
-    description: '광고를 삭제합니다.',
+    description: 'Delete an ad.',
   })
   @ApiParam({ name: 'id', description: 'Provider ad UUID' })
   @ApiResponse({
@@ -275,7 +275,7 @@ export class UsersController {
   @Get('providers')
   @ApiOperation({
     summary: 'Get service providers list',
-    description: '서비스 제공자 목록을 조회합니다. 필터링, 정렬, 페이지네이션을 지원합니다.',
+    description: 'Get service providers list. Supports filtering, sorting, and pagination.',
   })
   @ApiResponse({
     status: 200,
@@ -335,7 +335,7 @@ export class UsersController {
   @ApiOperation({
     summary: 'Get provider table data by provider id',
     description:
-      'providers 테이블 기준으로 특정 Provider의 원본 데이터를 조회합니다. (User Profile 이 아니라 Provider 테이블 데이터)',
+      'Get provider table data by provider ID (Provider table, not User Profile).',
   })
   @ApiResponse({
     status: 200,

@@ -14,16 +14,16 @@ export class WalletController {
   @Get('users/:userId/transactions')
   @ApiOperation({ 
     summary: 'Get user wallet transaction history',
-    description: '사용자가 자신의 지갑 거래 내역을 조회합니다. 자신의 userId만 조회 가능합니다. page와 limit 파라미터로 페이징이 가능합니다.'
+    description: 'Get wallet transaction history for the current user. Only own userId can be queried. Use page and limit for pagination.'
   })
   @ApiParam({ 
     name: 'userId', 
-    description: '사용자 ID (UUID) - 자신의 ID만 조회 가능',
+    description: 'User ID (UUID) - only own ID can be queried',
     type: String,
     example: 'a98a4eb5-4b1e-4851-99c6-f92806ae5f61'
   })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: '페이지 번호 (기본값: 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: '페이지당 항목 수 (기본값: 20, 최대: 100)' })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 20, max: 100)' })
   @ApiResponse({
     status: 200,
     description: 'User wallet transaction history returned successfully',
@@ -32,38 +32,38 @@ export class WalletController {
       properties: {
         items: {
           type: 'array',
-          description: '거래 내역 배열',
+          description: 'Transaction list',
           items: {
             type: 'object',
             properties: {
-              id: { type: 'string', format: 'uuid', description: '거래 ID' },
-              walletId: { type: 'string', format: 'uuid', description: '지갑 ID' },
-              userId: { type: 'string', format: 'uuid', description: '사용자 ID' },
+              id: { type: 'string', format: 'uuid', description: 'Transaction ID' },
+              walletId: { type: 'string', format: 'uuid', description: 'Wallet ID' },
+              userId: { type: 'string', format: 'uuid', description: 'User ID' },
               type: { 
                 type: 'string', 
                 enum: ['deposit', 'withdrawal', 'transfer', 'payment', 'refund', 'fee', 'reward'],
-                description: '거래 유형'
+                description: 'Transaction type'
               },
-              amount: { type: 'number', description: '거래 금액' },
-              currency: { type: 'string', description: '통화 (기본값: PHP)', example: 'PHP' },
-              balanceBefore: { type: 'number', description: '거래 전 잔액' },
-              balanceAfter: { type: 'number', description: '거래 후 잔액' },
-              relatedTransactionId: { type: 'string', format: 'uuid', nullable: true, description: '관련 거래 ID' },
-              relatedBookingId: { type: 'string', format: 'uuid', nullable: true, description: '관련 예약 ID' },
+              amount: { type: 'number', description: 'Transaction amount' },
+              currency: { type: 'string', description: 'Currency (default: PHP)', example: 'PHP' },
+              balanceBefore: { type: 'number', description: 'Balance before transaction' },
+              balanceAfter: { type: 'number', description: 'Balance after transaction' },
+              relatedTransactionId: { type: 'string', format: 'uuid', nullable: true, description: 'Related transaction ID' },
+              relatedBookingId: { type: 'string', format: 'uuid', nullable: true, description: 'Related booking ID' },
               status: { 
                 type: 'string', 
                 enum: ['pending', 'completed', 'failed', 'cancelled'],
-                description: '거래 상태'
+                description: 'Transaction status'
               },
-              description: { type: 'string', nullable: true, description: '거래 설명' },
-              paymentMethod: { type: 'string', nullable: true, description: '결제 수단' },
-              createdAt: { type: 'string', format: 'date-time', description: '생성 일시' },
+              description: { type: 'string', nullable: true, description: 'Transaction description' },
+              paymentMethod: { type: 'string', nullable: true, description: 'Payment method' },
+              createdAt: { type: 'string', format: 'date-time', description: 'Created at' },
             },
           },
         },
-        total: { type: 'number', description: '총 거래 개수' },
-        page: { type: 'number', description: '현재 페이지 번호' },
-        limit: { type: 'number', description: '페이지당 항목 수' },
+        total: { type: 'number', description: 'Total transaction count' },
+        page: { type: 'number', description: 'Current page number' },
+        limit: { type: 'number', description: 'Items per page' },
       },
       example: {
         items: [

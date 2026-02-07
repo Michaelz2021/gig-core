@@ -3,7 +3,7 @@ import { IsString, IsNotEmpty, IsOptional, MaxLength } from 'class-validator';
 
 export class CreateBankAccountDto {
   @ApiProperty({
-    description: '은행명',
+    description: 'Bank name',
     example: 'BDO',
     maxLength: 100,
   })
@@ -13,7 +13,7 @@ export class CreateBankAccountDto {
   bankName: string;
 
   @ApiProperty({
-    description: '계좌번호',
+    description: 'Account number',
     example: '1234567890',
     maxLength: 50,
   })
@@ -23,7 +23,7 @@ export class CreateBankAccountDto {
   accountNumber: string;
 
   @ApiProperty({
-    description: '예금주명',
+    description: 'Account holder name',
     example: 'Juan Dela Cruz',
     maxLength: 100,
   })
@@ -33,7 +33,7 @@ export class CreateBankAccountDto {
   accountName: string;
 
   @ApiProperty({
-    description: '지점명 (선택 사항)',
+    description: 'Branch name (optional)',
     example: 'Makati Branch',
     maxLength: 100,
     required: false,

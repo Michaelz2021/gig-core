@@ -71,7 +71,7 @@ export class NotificationsController {
   @Post('test/push')
   @ApiOperation({
     summary: 'Test FCM push notification',
-    description: 'FCM 푸시 알림을 테스트합니다. 실제 디바이스 토큰이 필요합니다.',
+    description: 'Test FCM push notification. Requires actual device token(s).',
   })
   @ApiBody({
     schema: {
@@ -80,22 +80,22 @@ export class NotificationsController {
         deviceTokens: {
           type: 'array',
           items: { type: 'string' },
-          description: '디바이스 토큰 배열',
+          description: 'Device token array',
           example: ['device-token-1', 'device-token-2'],
         },
         title: {
           type: 'string',
-          description: '알림 제목',
-          example: '테스트 알림',
+          description: 'Notification title',
+            example: 'Test notification',
         },
         body: {
           type: 'string',
-          description: '알림 내용',
-          example: '이것은 FCM 테스트 알림입니다.',
+          description: 'Notification body',
+            example: 'This is an FCM test notification.',
         },
         data: {
           type: 'object',
-          description: '추가 데이터 (선택사항)',
+          description: 'Additional data (optional)',
           example: { requestId: 'REQ-2025-001234', category: 'Home Services' },
         },
       },
@@ -107,11 +107,11 @@ export class NotificationsController {
     schema: {
       type: 'object',
       properties: {
-        success: { type: 'number', description: '성공한 전송 수' },
-        failure: { type: 'number', description: '실패한 전송 수' },
+        success: { type: 'number', description: 'Number of successful sends' },
+        failure: { type: 'number', description: 'Number of failed sends' },
         errors: {
           type: 'array',
-          description: '에러 목록',
+          description: 'Error list',
           items: { type: 'object' },
         },
       },

@@ -12,17 +12,17 @@ export class NoticeResponseDto {
   })
   type: NoticeType;
 
-  @ApiProperty({ example: '서비스 점검 안내', description: 'Notice title' })
+  @ApiProperty({ example: 'Service maintenance notice', description: 'Notice title' })
   title: string;
 
   @ApiProperty({ 
-    example: '안녕하세요. 시스템 점검으로 인해 일시적으로 서비스가 중단됩니다...', 
+    example: 'Service will be temporarily unavailable due to system maintenance...', 
     description: 'Notice content' 
   })
   content: string;
 
   @ApiProperty({ 
-    example: '2025년 1월 15일 시스템 점검 안내', 
+    example: 'System maintenance notice - Jan 15, 2025', 
     required: false,
     description: 'Notice summary' 
   })

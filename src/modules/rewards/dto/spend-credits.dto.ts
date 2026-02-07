@@ -3,7 +3,7 @@ import { IsNumber, IsPositive, IsString, IsOptional, IsUUID } from 'class-valida
 
 export class SpendCreditsDto {
   @ApiProperty({
-    description: '사용할 크레딧 수량',
+    description: 'Number of credits to spend',
     example: 10,
     minimum: 1,
   })
@@ -12,14 +12,14 @@ export class SpendCreditsDto {
   credits: number;
 
   @ApiProperty({
-    description: '사용 사유',
+    description: 'Spend reason',
     example: 'Auction bid',
   })
   @IsString()
   reason: string;
 
   @ApiProperty({
-    description: '상세 설명 (선택사항)',
+    description: 'Detail description (optional)',
     example: 'Spent 10 credits to place bid on auction',
     required: false,
   })
@@ -28,7 +28,7 @@ export class SpendCreditsDto {
   description?: string;
 
   @ApiProperty({
-    description: '관련 경매 ID (선택사항)',
+    description: 'Related auction ID (optional)',
     example: 'a98a4eb5-4b1e-4851-99c6-f92806ae5f61',
     required: false,
   })
@@ -37,7 +37,7 @@ export class SpendCreditsDto {
   relatedAuctionId?: string;
 
   @ApiProperty({
-    description: '관련 예약 ID (선택사항)',
+    description: 'Related booking ID (optional)',
     example: 'a98a4eb5-4b1e-4851-99c6-f92806ae5f61',
     required: false,
   })

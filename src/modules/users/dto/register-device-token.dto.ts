@@ -4,7 +4,7 @@ import { AppMode, DevicePlatform } from '../entities/user-device-token.entity';
 
 export class RegisterDeviceTokenDto {
   @ApiProperty({
-    description: 'FCM 디바이스 토큰',
+    description: 'FCM device token',
     example: 'fGhJkLmNoPqRsTuVwXyZ1234567890abcdefghijklmnopqrstuvwxyz',
   })
   @IsString()
@@ -12,7 +12,7 @@ export class RegisterDeviceTokenDto {
   deviceToken: string;
 
   @ApiProperty({
-    description: '앱 모드 (consumer 또는 provider)',
+    description: 'App mode (consumer or provider)',
     enum: AppMode,
     example: AppMode.CONSUMER,
   })
@@ -21,7 +21,7 @@ export class RegisterDeviceTokenDto {
   appMode: AppMode;
 
   @ApiProperty({
-    description: '디바이스 플랫폼',
+    description: 'Device platform',
     enum: DevicePlatform,
     example: DevicePlatform.ANDROID,
   })
@@ -30,7 +30,7 @@ export class RegisterDeviceTokenDto {
   platform: DevicePlatform;
 
   @ApiProperty({
-    description: '디바이스 ID (선택사항)',
+    description: 'Device ID (optional)',
     example: 'device-12345',
     required: false,
   })

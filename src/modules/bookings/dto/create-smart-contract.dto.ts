@@ -2,11 +2,11 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, IsObject, IsUUID } from 'class-validator';
 
 export class CreateSmartContractDto {
-  @ApiProperty({ description: '예약 ID' })
+  @ApiProperty({ description: 'Booking ID' })
   @IsUUID()
   bookingId: string;
 
-  @ApiProperty({ description: '계약 조건', required: false })
+  @ApiProperty({ description: 'Contract terms', required: false })
   @IsObject()
   @IsOptional()
   contractTerms?: {
@@ -18,7 +18,7 @@ export class CreateSmartContractDto {
     terminationConditions?: Record<string, any>;
   };
 
-  @ApiProperty({ description: '계약서 PDF URL', required: false })
+  @ApiProperty({ description: 'Contract PDF URL', required: false })
   @IsString()
   @IsOptional()
   contractDocumentUrl?: string;

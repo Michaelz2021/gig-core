@@ -21,19 +21,19 @@ import { createClient } from 'redis';
           const host = configService.get<string>('REDIS_HOST') || 'localhost';
           const port = Number(configService.get<number>('REDIS_PORT')) || 6379;
 
-          const client = createClient({ 
+          const client = createClient({
             url: `redis://${host}:${port}`,
             socket: {
-              // 재연결 비활성화 - 초기 연결만 시도
-              reconnectStrategy: false,
-              connectTimeout: 5000, // 5초 타임아웃
+              connectTimeout: 5000,
+              reconnectStrategy(retries) {
+                if (retries > 20) return new Error('Redis max reconnect retries');
+                return Math.min(1000 * 2 ** retries, 10000);
+              },
             },
           });
 
-          // 에러 이벤트는 조용히 처리 (재연결 시도 안 함)
           client.on('error', (err) => {
-            // 로그는 남기지 않음 (이미 catch에서 처리)
-            // 재연결을 시도하지 않도록 설정됨
+            logger.warn(`Redis client error: ${err.message}`);
           });
 
           client.on('connect', () => {

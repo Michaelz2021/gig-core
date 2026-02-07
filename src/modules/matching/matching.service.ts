@@ -128,6 +128,7 @@ export class MatchingService {
 
   async findAllAuctions(userId?: string, status?: AuctionStatus) {
     console.log('[MatchingService] findAllAuctions - userId:', userId, 'status:', status);
+    const now = new Date();
     const queryBuilder = this.auctionRepository
       .createQueryBuilder('auction')
       .leftJoinAndSelect('auction.consumer', 'consumer');
@@ -143,6 +144,8 @@ export class MatchingService {
         queryBuilder.where('auction.status::text = :status', { status: statusStr });
       }
     }
+    // Deadline이 지난 경매는 목록에서 제외 (클라이언트 리스트용)
+    queryBuilder.andWhere('(auction.deadline IS NULL OR auction.deadline >= :now)', { now });
     queryBuilder.orderBy('auction.createdAt', 'DESC');
     const [items, total] = await queryBuilder.getManyAndCount();
     console.log('[MatchingService] findAllAuctions - Found auctions:', total);

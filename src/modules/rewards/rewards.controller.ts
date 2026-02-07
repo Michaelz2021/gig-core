@@ -17,7 +17,7 @@ export class RewardsController {
   @Get('balance')
   @ApiOperation({
     summary: 'Get reward credits balance',
-    description: '사용자의 현재 리워드 크레딧 잔액을 조회합니다.',
+    description: 'Get current reward credits balance for the user.',
   })
   @ApiResponse({
     status: 200,
@@ -27,7 +27,7 @@ export class RewardsController {
       properties: {
         balance: {
           type: 'number',
-          description: '현재 리워드 크레딧 잔액',
+          description: 'Current reward credits balance',
           example: 150,
         },
       },
@@ -44,7 +44,7 @@ export class RewardsController {
   @Get('transactions')
   @ApiOperation({
     summary: 'Get reward credits transaction history',
-    description: '사용자의 리워드 크레딧 거래 내역을 조회합니다. page와 limit 파라미터로 페이징이 가능합니다.',
+    description: 'Get reward credits transaction history. Use page and limit for pagination.',
   })
   @ApiQuery({ name: 'page', required: false, type: Number, description: '페이지 번호 (기본값: 1)' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: '페이지당 항목 수 (기본값: 20, 최대: 100)' })
@@ -56,32 +56,32 @@ export class RewardsController {
       properties: {
         items: {
           type: 'array',
-          description: '거래 내역 배열',
+          description: 'Transaction list',
           items: {
             type: 'object',
             properties: {
-              id: { type: 'string', format: 'uuid', description: '거래 ID' },
-              userId: { type: 'string', format: 'uuid', description: '사용자 ID' },
+              id: { type: 'string', format: 'uuid', description: 'Transaction ID' },
+              userId: { type: 'string', format: 'uuid', description: 'User ID' },
               transactionType: {
                 type: 'string',
                 enum: ['earned', 'spent', 'purchased', 'bonus', 'penalty', 'refunded'],
-                description: '거래 유형',
+                description: 'Transaction type',
               },
-              creditsChange: { type: 'number', description: '크레딧 변화량 (+/-)' },
-              creditsBefore: { type: 'number', description: '거래 전 크레딧' },
-              creditsAfter: { type: 'number', description: '거래 후 크레딧' },
-              reason: { type: 'string', nullable: true, description: '거래 사유' },
-              description: { type: 'string', nullable: true, description: '상세 설명' },
-              relatedBookingId: { type: 'string', format: 'uuid', nullable: true, description: '관련 예약 ID' },
-              relatedAuctionId: { type: 'string', format: 'uuid', nullable: true, description: '관련 경매 ID' },
-              expiresAt: { type: 'string', format: 'date-time', nullable: true, description: '만료일' },
-              createdAt: { type: 'string', format: 'date-time', description: '생성 일시' },
+              creditsChange: { type: 'number', description: 'Credits change (+/-)' },
+              creditsBefore: { type: 'number', description: 'Credits before transaction' },
+              creditsAfter: { type: 'number', description: 'Credits after transaction' },
+              reason: { type: 'string', nullable: true, description: 'Transaction reason' },
+              description: { type: 'string', nullable: true, description: 'Detail description' },
+              relatedBookingId: { type: 'string', format: 'uuid', nullable: true, description: 'Related booking ID' },
+              relatedAuctionId: { type: 'string', format: 'uuid', nullable: true, description: 'Related auction ID' },
+              expiresAt: { type: 'string', format: 'date-time', nullable: true, description: 'Expiry date' },
+              createdAt: { type: 'string', format: 'date-time', description: 'Created at' },
             },
           },
         },
-        total: { type: 'number', description: '총 거래 개수' },
-        page: { type: 'number', description: '현재 페이지 번호' },
-        limit: { type: 'number', description: '페이지당 항목 수' },
+        total: { type: 'number', description: 'Total transaction count' },
+        page: { type: 'number', description: 'Current page number' },
+        limit: { type: 'number', description: 'Items per page' },
       },
       example: {
         items: [
@@ -121,7 +121,7 @@ export class RewardsController {
   @Post('buy')
   @ApiOperation({
     summary: 'Buy reward credits',
-    description: '리워드 크레딧을 구매합니다.',
+    description: 'Purchase reward credits.',
   })
   @ApiResponse({
     status: 201,
@@ -142,7 +142,7 @@ export class RewardsController {
   @Post('spend')
   @ApiOperation({
     summary: 'Spend reward credits',
-    description: '리워드 크레딧을 사용합니다. (예: 경매 입찰 등)',
+    description: 'Spend reward credits (e.g. for auction bid).',
   })
   @ApiResponse({
     status: 201,

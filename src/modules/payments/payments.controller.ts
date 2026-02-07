@@ -4,6 +4,8 @@ import { PaymentsService } from './payments.service';
 import { ProcessPaymentDto } from './dto/process-payment.dto';
 import { WalletTopupDto } from './dto/wallet-topup.dto';
 import { WalletWithdrawDto } from './dto/wallet-withdraw.dto';
+import { InitializePaymentSessionDto } from './dto/initialize-payment-session.dto';
+import { XenditProcessDto } from './dto/xendit-process.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 
@@ -39,77 +41,148 @@ export class PaymentsController {
   @Post('wallet/withdraw')
   @ApiOperation({
     summary: 'Withdraw from wallet',
-    description: '지갑에서 출금을 요청합니다. 출금 금액과 출금 대상 정보를 JSON으로 전송합니다.',
+    description: 'Request withdrawal from wallet. Send amount and withdrawal target info as JSON.',
   })
   @ApiBody({ type: WalletWithdrawDto })
   @ApiResponse({
     status: 200,
-    description: '출금 요청 처리 완료 (성공 또는 실패)',
+    description: 'Withdrawal request completed (success or failure)',
     schema: {
       type: 'object',
       properties: {
         success: {
           type: 'boolean',
-          description: '출금 성공 여부',
+          description: 'Whether withdrawal succeeded',
           example: true,
         },
         reason: {
           type: 'string',
           enum: ['INSUFFICIENT_BALANCE', 'WITHDRAWAL_FAILED', 'INVALID_AMOUNT', 'INVALID_WITHDRAWAL_INFO', 'OTHER'],
-          description: '실패 원인 (실패 시에만 반환)',
+          description: 'Failure reason (returned on failure only)',
           example: 'INSUFFICIENT_BALANCE',
         },
         balance: {
           type: 'number',
-          description: '출금 후 잔액 (성공 시) 또는 현재 잔액 (실패 시)',
+          description: 'Balance after withdrawal (success) or current balance (failure)',
           example: 5000.00,
         },
         message: {
           type: 'string',
-          description: '응답 메시지',
-          example: '출금이 성공적으로 처리되었습니다.',
+          description: 'Response message',
+          example: 'Withdrawal processed successfully.',
         },
         error: {
           type: 'string',
-          description: '에러 상세 정보 (에러 발생 시)',
+          description: 'Error details (when error occurs)',
           example: 'Database connection failed',
         },
       },
       example: {
         success: true,
         balance: 5000.00,
-        message: '출금이 성공적으로 처리되었습니다.',
+        message: 'Withdrawal processed successfully.',
       },
     },
   })
   @ApiResponse({
     status: 200,
-    description: '출금 실패 - 잔액 부족',
+    description: 'Withdrawal failed - insufficient balance',
     schema: {
       type: 'object',
       properties: {
         success: { type: 'boolean', example: false },
         reason: { type: 'string', example: 'INSUFFICIENT_BALANCE' },
         balance: { type: 'number', example: 500.00 },
-        message: { type: 'string', example: '잔액이 부족합니다. 현재 잔액: 500.00 PHP' },
+        message: { type: 'string', example: 'Insufficient balance. Current balance: 500.00 PHP' },
       },
     },
   })
   @ApiResponse({
     status: 200,
-    description: '출금 실패 - 기타 오류',
+    description: 'Withdrawal failed - other error',
     schema: {
       type: 'object',
       properties: {
         success: { type: 'boolean', example: false },
         reason: { type: 'string', example: 'WITHDRAWAL_FAILED' },
-        message: { type: 'string', example: '출금 처리 중 오류가 발생했습니다.' },
+        message: { type: 'string', example: 'An error occurred while processing withdrawal.' },
         error: { type: 'string', example: 'Database connection failed' },
       },
     },
   })
   withdraw(@GetUser() user: any, @Body() withdrawDto: WalletWithdrawDto) {
     return this.paymentsService.withdraw(user.id, withdrawDto);
+  }
+
+  // Payment Session Initialization (contract payment)
+  @Post('contracts/:contractId/initialize')
+  @ApiOperation({
+    summary: 'Initialize payment session for contract',
+    description: 'Create a payment session for a contract. Returns session id, amount breakdown, and available payment methods (CARD, GCash, PayMaya, QR.ph, InstaPay).',
+  })
+  @ApiParam({ name: 'contractId', description: 'Contract ID (UUID)' })
+  @ApiBody({ type: InitializePaymentSessionDto })
+  @ApiOkResponse({
+    description: 'Payment session initialized',
+    schema: {
+      type: 'object',
+      properties: {
+        payment_session_id: { type: 'string', example: 'PSESS-2025-001' },
+        bookingId: { type: 'string', example: 'CON-2025-001234' },
+        amount: { type: 'number', example: 2140.0 },
+        breakdown: {
+          type: 'object',
+          properties: {
+            service_cost: { type: 'number', example: 2000.0 },
+            platform_fee: { type: 'number', example: 140.0 },
+            insurance: { type: 'number', example: 0 },
+          },
+        },
+        available_methods: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              method_type: { type: 'string', example: 'CARD' },
+              display_name: { type: 'string', example: 'Credit/Debit Card' },
+              fee: { type: 'string', example: '2.5%' },
+              processing_time: { type: 'string', example: 'Instant' },
+            },
+          },
+        },
+        expires_at: { type: 'string', format: 'date-time', example: '2025-12-26T18:00:00Z' },
+      },
+    },
+  })
+  initializePaymentSession(
+    @GetUser() user: any,
+    @Param('contractId') contractId: string,
+    @Body() dto: InitializePaymentSessionDto,
+  ) {
+    return this.paymentsService.initializePaymentSession(contractId, user.id, dto);
+  }
+
+  @Post('xenditprocess')
+  @ApiOperation({
+    summary: 'Process payment via Xendit',
+    description: 'Submit payment with selected method (CARD, GCASH, PAYMAYA, QRPH, INSTAPAY). Returns payment URL for redirect or QR code for QR.ph.',
+  })
+  @ApiBody({ type: XenditProcessDto })
+  @ApiOkResponse({
+    description: 'Payment created; redirect user to payment_url or display qr_code',
+    schema: {
+      type: 'object',
+      properties: {
+        xendit_payment_id: { type: 'string', example: 'XDT-67890' },
+        payment_url: { type: 'string', example: 'https://checkout.xendit.co/web/67890' },
+        qr_code: { type: 'string', example: 'data:image/png;base64,...', description: 'Present for QR.ph' },
+        redirect_required: { type: 'boolean', example: true },
+        expires_at: { type: 'string', format: 'date-time', example: '2025-12-25T15:00:00Z' },
+      },
+    },
+  })
+  xenditProcess(@GetUser() user: any, @Body() dto: XenditProcessDto) {
+    return this.paymentsService.xenditProcess(user.id, dto);
   }
 
   // Payment APIs (API spec)

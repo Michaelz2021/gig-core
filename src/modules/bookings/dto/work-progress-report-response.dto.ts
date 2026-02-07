@@ -11,21 +11,21 @@ export class WorkProgressReportResponseDto {
   reportType: string;
 
   @ApiProperty({ 
-    example: '작업을 시작했습니다. 첫 번째 AC 유닛의 필터를 확인한 결과 매우 더러운 상태입니다.', 
+    example: 'Started work. First AC unit filter is very dirty.', 
     required: false,
     description: 'Report notes (one of notes, message, or content is required)' 
   })
   notes?: string;
 
   @ApiProperty({ 
-    example: '첫 번째 AC 유닛 청소 완료했습니다.', 
+    example: 'First AC unit cleaning completed.', 
     required: false,
     description: 'Report message (one of notes, message, or content is required)' 
   })
   message?: string;
 
   @ApiProperty({ 
-    example: '두 번째 AC 유닛도 완료했습니다.', 
+    example: 'Second AC unit completed as well.', 
     required: false,
     description: 'Report content (one of notes, message, or content is required)' 
   })
@@ -61,7 +61,7 @@ export class WorkProgressReportResponseDto {
   progressPercentage?: number;
 
   @ApiProperty({ 
-    example: ['첫 번째 AC 유닛 검사 완료', '필터 상태 확인 완료'], 
+    example: ['First AC unit inspection done', 'Filter status checked'], 
     required: false,
     type: [String],
     description: 'Completed tasks list' 
@@ -88,7 +88,7 @@ export class WorkProgressReportResponseDto {
   evidence?: { type: string; url: string; caption?: string }[];
 
   @ApiProperty({ 
-    example: ['두 번째 AC 유닛 청소 예정', '최종 점검'], 
+    example: ['Second AC unit cleaning scheduled', 'Final check'], 
     required: false,
     type: [String],
     description: 'Next steps list' 

@@ -2,11 +2,11 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, IsObject } from 'class-validator';
 
 export class AddMessageToSessionDto {
-  @ApiProperty({ description: '메시지 내용' })
+  @ApiProperty({ description: 'Message content' })
   @IsString()
   message: string;
 
-  @ApiProperty({ description: '메시지 메타데이터', required: false })
+  @ApiProperty({ description: 'Message metadata', required: false })
   @IsObject()
   @IsOptional()
   metadata?: Record<string, any>;

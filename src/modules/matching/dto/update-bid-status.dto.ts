@@ -4,7 +4,7 @@ import { AuctionBidStatus } from '../entities/auction-bid.entity';
 
 export class UpdateBidStatusDto {
   @ApiProperty({
-    description: 'Bid 상태',
+    description: 'Bid status',
     enum: AuctionBidStatus,
     enumName: 'AuctionBidStatus',
     example: 'under_review',
@@ -17,7 +17,7 @@ export class UpdateBidStatusDto {
   @ApiProperty({
     description: '상태 변경 사유 (선택사항)',
     required: false,
-    example: '검토 중입니다',
+    example: 'Under review',
   })
   @IsString()
   @IsOptional()

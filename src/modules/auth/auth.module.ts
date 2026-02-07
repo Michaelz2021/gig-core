@@ -4,6 +4,8 @@ import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
+import { VerifyEmailViewController } from './verify-email-view.controller';
+import { VerifyEmailResultViewController } from './verify-email-result-view.controller';
 import { AuthService } from './auth.service';
 import { SmsService } from './sms.service';
 import { EmailService } from './email.service';
@@ -28,8 +30,8 @@ import { RedisModule } from '../../config/redis.module';
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, VerifyEmailViewController, VerifyEmailResultViewController],
   providers: [AuthService, SmsService, EmailService, JwtStrategy],
-  exports: [AuthService, JwtModule],
+  exports: [AuthService, JwtModule, EmailService],
 })
 export class AuthModule {}

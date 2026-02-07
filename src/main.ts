@@ -25,7 +25,9 @@ async function bootstrap() {
 
   // Global prefix (only applies to API routes registered after this)
   // Static files served above will NOT be affected by this prefix
-  app.setGlobalPrefix(apiPrefix);
+  // verify-email / verify-email-result: 이메일 인증 링크 및 결과 화면은
+  // GET /verify-email?token=..., GET /verify-email-result?... 로 바로 접근하므로 prefix 제외
+  app.setGlobalPrefix(apiPrefix, { exclude: ['verify-email', 'verify-email-result'] });
   
   // CORS configuration
   // 프론트엔드와 백엔드가 분리되어 있으므로 CORS 설정 필요
@@ -69,7 +71,7 @@ async function bootstrap() {
     .setTitle('AI TrustTrade Core API')
     .setDescription(
       'API documentation for AI TrustTrade Core Service.\n\n' +
-      '**401 방지 (보호된 API):** 1) POST /api/v1/auth/login 으로 accessToken 발급 → 2) 상단 **Authorize** 클릭 후 accessToken **만** 붙여넣기 (Bearer 입력 금지) → 3) **Authorize** → **Close** 후 요청 실행.',
+      '**Avoid 401 (protected APIs):** 1) Obtain accessToken via POST /api/v1/auth/login → 2) Click **Authorize** above and paste the accessToken only (do not type Bearer) → 3) Click **Authorize** → **Close** then execute the request.',
     )
     .setVersion('1.0.0')
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'access-token')

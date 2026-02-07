@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Auction, AuctionStatus } from '../matching/entities/auction.entity';
@@ -17,6 +17,7 @@ import { Portfolio } from '../users/entities/portfolio.entity';
 import { CreateServiceCategoryDto } from '../services/dto/create-service-category.dto';
 import { NoticesService } from '../notices/notices.service';
 import { NoticeType } from '../notices/entities/notice.entity';
+import { EmailService } from '../auth/email.service';
 
 @Injectable()
 export class AdminService {
@@ -48,10 +49,23 @@ export class AdminService {
     @InjectRepository(Portfolio)
     private readonly portfolioRepository: Repository<Portfolio>,
     private readonly noticesService: NoticesService,
+    private readonly emailService: EmailService,
   ) {}
 
   async getNotices(type?: NoticeType, isActive?: boolean) {
     return this.noticesService.findAll(type, isActive);
+  }
+
+  async sendTestEmail(toEmail: string): Promise<{ success: boolean; message: string; messageId?: string }> {
+    const result = await this.emailService.sendTestEmail(toEmail);
+    if (!result.success) {
+      throw new BadRequestException(result.error || 'Failed to send test email');
+    }
+    return {
+      success: true,
+      message: 'Test email sent successfully',
+      messageId: result.messageId,
+    };
   }
 
   async getDashboardStats() {

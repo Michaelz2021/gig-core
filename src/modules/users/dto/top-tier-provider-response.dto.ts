@@ -9,7 +9,7 @@ export class CategoryDto {
 }
 
 export class TopTierProviderItemDto {
-  @ApiProperty({ example: 1, description: '랭킹 위치' })
+  @ApiProperty({ example: 1, description: 'Ranking position' })
   ranking: number;
 
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440001' })
@@ -48,7 +48,7 @@ export class TopTierProviderItemDto {
   @ApiProperty({ example: 95.2 })
   responseTimeScore: number;
 
-  @ApiProperty({ example: 150, description: '리뷰 수 점수' })
+  @ApiProperty({ example: 150, description: 'Review count score' })
   reviewCountScore?: number;
 
   @ApiProperty({ example: 'https://api.example.com/images/provider_123.jpg', required: false })
