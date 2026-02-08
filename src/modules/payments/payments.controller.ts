@@ -1,17 +1,18 @@
-import { Controller, Get, Post, Body, UseGuards, Param, Query, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Param, Query, ForbiddenException, UseFilters } from '@nestjs/common';
 import { ApiOkResponse, ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
 import { ProcessPaymentDto } from './dto/process-payment.dto';
 import { WalletTopupDto } from './dto/wallet-topup.dto';
 import { WalletWithdrawDto } from './dto/wallet-withdraw.dto';
-import { InitializePaymentSessionDto } from './dto/initialize-payment-session.dto';
 import { XenditProcessDto } from './dto/xendit-process.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
+import { XenditExceptionFilter } from '../../common/filters/xendit-exception.filter';
 
 @ApiTags('payments')
 @Controller('payment')
 @UseGuards(JwtAuthGuard)
+@UseFilters(XenditExceptionFilter)
 @ApiBearerAuth('access-token')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
@@ -118,24 +119,26 @@ export class PaymentsController {
   @Post('contracts/:contractId/initialize')
   @ApiOperation({
     summary: 'Initialize payment session for contract',
-    description: 'Create a payment session for a contract. Returns session id, amount breakdown, and available payment methods (CARD, GCash, PayMaya, QR.ph, InstaPay).',
+    description: 'Create a payment session for a contract (no body). Returns session id, amount breakdown, and available payment methods (CARD, GCash, PayMaya, QR.ph, InstaPay).',
   })
-  @ApiParam({ name: 'contractId', description: 'Contract ID (UUID)' })
-  @ApiBody({ type: InitializePaymentSessionDto })
+  @ApiParam({
+    name: 'contractId',
+    description: 'Contract ID (UUID) or booking_number (e.g. BOOK-xxx) when contract not created yet',
+  })
   @ApiOkResponse({
     description: 'Payment session initialized',
     schema: {
       type: 'object',
       properties: {
-        payment_session_id: { type: 'string', example: 'PSESS-2025-001' },
-        bookingId: { type: 'string', example: 'CON-2025-001234' },
+        payment_session_id: { type: 'string', example: 'PSESS-1735123456789' },
+        contract_id: { type: 'string' },
+        booking_id: { type: 'string' },
         amount: { type: 'number', example: 2140.0 },
         breakdown: {
           type: 'object',
           properties: {
             service_cost: { type: 'number', example: 2000.0 },
             platform_fee: { type: 'number', example: 140.0 },
-            insurance: { type: 'number', example: 0 },
           },
         },
         available_methods: {
@@ -146,20 +149,71 @@ export class PaymentsController {
               method_type: { type: 'string', example: 'CARD' },
               display_name: { type: 'string', example: 'Credit/Debit Card' },
               fee: { type: 'string', example: '2.5%' },
-              processing_time: { type: 'string', example: 'Instant' },
             },
           },
         },
-        expires_at: { type: 'string', format: 'date-time', example: '2025-12-26T18:00:00Z' },
+        expires_at: { type: 'string', format: 'date-time' },
       },
     },
   })
   initializePaymentSession(
     @GetUser() user: any,
-    @Param('contractId') contractId: string,
-    @Body() dto: InitializePaymentSessionDto,
+    @Param('contractId') contractIdOrBookingNumber: string,
   ) {
-    return this.paymentsService.initializePaymentSession(contractId, user.id, dto);
+    // 앱에서 계약 없을 때 booking_number를 같은 path에 넣어 호출 (BOOK-xxx 형식)
+    const isBookingNumber = contractIdOrBookingNumber.startsWith('BOOK-');
+    if (isBookingNumber) {
+      return this.paymentsService.initializePaymentSessionByBookingNumber(
+        contractIdOrBookingNumber,
+        user.id,
+      );
+    }
+    return this.paymentsService.initializePaymentSession(contractIdOrBookingNumber, user.id);
+  }
+
+  // Payment Session Initialization by booking_number (계약서 없이 예약만 있는 경우)
+  @Post('bookings/:bookingNumber/initialize')
+  @ApiOperation({
+    summary: 'Initialize payment session by booking number',
+    description: 'Create a payment session for a booking using booking_number (no contract yet). Looks up booking table and returns same format: session id, amount breakdown, available payment methods.',
+  })
+  @ApiParam({ name: 'bookingNumber', description: 'Booking number (e.g. BOOK-1735123456789-ABC)' })
+  @ApiOkResponse({
+    description: 'Payment session initialized',
+    schema: {
+      type: 'object',
+      properties: {
+        payment_session_id: { type: 'string', example: 'PSESS-1735123456789' },
+        contract_id: { type: 'string', description: 'Placeholder (booking_id) when contract not created yet' },
+        booking_id: { type: 'string' },
+        amount: { type: 'number', example: 2140.0 },
+        breakdown: {
+          type: 'object',
+          properties: {
+            service_cost: { type: 'number', example: 2000.0 },
+            platform_fee: { type: 'number', example: 140.0 },
+          },
+        },
+        available_methods: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              method_type: { type: 'string', example: 'CARD' },
+              display_name: { type: 'string', example: 'Credit/Debit Card' },
+              fee: { type: 'string', example: '2.5%' },
+            },
+          },
+        },
+        expires_at: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  initializePaymentSessionByBookingNumber(
+    @GetUser() user: any,
+    @Param('bookingNumber') bookingNumber: string,
+  ) {
+    return this.paymentsService.initializePaymentSessionByBookingNumber(bookingNumber, user.id);
   }
 
   @Post('xenditprocess')
@@ -183,6 +237,28 @@ export class PaymentsController {
   })
   xenditProcess(@GetUser() user: any, @Body() dto: XenditProcessDto) {
     return this.paymentsService.xenditProcess(user.id, dto);
+  }
+
+  @Get('status/:sessionId')
+  @ApiOperation({ summary: 'Get payment session status' })
+  @ApiParam({ name: 'sessionId', description: 'Payment session ID (e.g. PSESS-2025-001)' })
+  @ApiOkResponse({
+    description: 'Payment session status returned',
+    schema: {
+      type: 'object',
+      properties: {
+        payment_session_id: { type: 'string' },
+        xendit_payment_id: { type: 'string', nullable: true },
+        status: { type: 'string', enum: ['PENDING', 'PROCESSING', 'PAID', 'FAILED', 'EXPIRED'] },
+        payment_method: { type: 'string', nullable: true },
+        amount: { type: 'number' },
+        paid_at: { type: 'string', format: 'date-time', nullable: true },
+        expires_at: { type: 'string', format: 'date-time', nullable: true },
+      },
+    },
+  })
+  getPaymentStatus(@GetUser() user: any, @Param('sessionId') sessionId: string) {
+    return this.paymentsService.getPaymentStatus(sessionId, user.id);
   }
 
   // Payment APIs (API spec)

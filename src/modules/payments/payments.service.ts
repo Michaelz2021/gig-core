@@ -1,16 +1,17 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Payment, PaymentStatus, PaymentMethod } from './entities/payment.entity';
 import { Transaction, TransactionStatus } from './entities/transaction.entity';
 import { Escrow, EscrowStatus } from './entities/escrow.entity';
 import { Wallet, WalletStatus } from './entities/wallet.entity';
+import { PaymentSession } from './entities/payment-session.entity';
 import { ProcessPaymentDto } from './dto/process-payment.dto';
 import { WalletTopupDto } from './dto/wallet-topup.dto';
-import { InitializePaymentSessionDto } from './dto/initialize-payment-session.dto';
 import { XenditProcessDto } from './dto/xendit-process.dto';
 import { BookingsService } from '../bookings/bookings.service';
 import { UsersService } from '../users/users.service';
+import { XenditPaymentService } from './services/xendit-payment.service';
 
 @Injectable()
 export class PaymentsService {
@@ -23,8 +24,11 @@ export class PaymentsService {
     private readonly escrowRepository: Repository<Escrow>,
     @InjectRepository(Wallet)
     private readonly walletRepository: Repository<Wallet>,
+    @InjectRepository(PaymentSession)
+    private readonly paymentSessionRepository: Repository<PaymentSession>,
     private readonly bookingsService: BookingsService,
     private readonly usersService: UsersService,
+    private readonly xenditPaymentService: XenditPaymentService,
   ) {}
 
   private async createWalletTransaction(input: {
@@ -143,60 +147,147 @@ export class PaymentsService {
   }
 
   /**
-   * Initialize a payment session for a contract. Returns session id, amount breakdown, and available payment methods.
+   * Initialize a payment session for a contract.
+   * 1. Validate contract 2. Reuse existing PENDING/PROCESSING session or 3. Create new session.
    */
-  async initializePaymentSession(
+  async initializePaymentSession(contractId: string, userId: string) {
+    // 1. Validate contract
+    const contract = await this.validateContract(contractId, userId);
+
+    // 2. Check for existing session
+    const existing = await this.paymentSessionRepository.findOne({
+      where: {
+        contract_id: contractId,
+        status: In(['PENDING', 'PROCESSING']),
+      },
+    });
+
+    if (existing) {
+      return this.formatSessionResponse(existing);
+    }
+
+    // 3. Create new session
+    const sessionId = `PSESS-${Date.now()}`;
+    const session = this.paymentSessionRepository.create({
+      session_id: sessionId,
+      contract_id: contractId,
+      booking_id: contract.booking_id,
+      buyer_id: userId,
+      total_amount: contract.total_amount,
+      service_amount: contract.agreed_price,
+      platform_fee: contract.platform_fee,
+      status: 'PENDING',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+    });
+
+    await this.paymentSessionRepository.save(session);
+
+    return this.formatSessionResponse(session);
+  }
+
+  /**
+   * Initialize a payment session by booking_number (계약서 없이 예약만 있는 경우).
+   * booking_number로 booking 테이블 조회 후 동일한 출력 형식으로 반환.
+   */
+  async initializePaymentSessionByBookingNumber(bookingNumber: string, userId: string) {
+    const booking = await this.bookingsService.findOneByBookingNumber(bookingNumber);
+
+    if (booking.consumerId !== userId) {
+      throw new ForbiddenException('Access denied to this booking');
+    }
+
+    const bookingId = booking.id;
+    const totalAmount = Number(booking.totalAmount ?? 0);
+    const platformFee = Number(booking.platformFee ?? 0);
+    const agreedPrice = Number(booking.subtotal ?? totalAmount - platformFee);
+
+    // 기존 세션 확인 (booking_id 기준, contract 미생성 시 contract_id는 booking_id로 저장)
+    const existing = await this.paymentSessionRepository.findOne({
+      where: {
+        booking_id: bookingId,
+        status: In(['PENDING', 'PROCESSING']),
+      },
+    });
+
+    if (existing) {
+      return this.formatSessionResponse(existing);
+    }
+
+    const sessionId = `PSESS-${Date.now()}`;
+    const session = this.paymentSessionRepository.create({
+      session_id: sessionId,
+      contract_id: bookingId, // 계약 미생성 시 booking_id를 placeholder로 사용
+      booking_id: bookingId,
+      buyer_id: userId,
+      total_amount: totalAmount,
+      service_amount: agreedPrice,
+      platform_fee: platformFee,
+      status: 'PENDING',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+
+    await this.paymentSessionRepository.save(session);
+    return this.formatSessionResponse(session);
+  }
+
+  private async validateContract(
     contractId: string,
     userId: string,
-    dto: InitializePaymentSessionDto,
   ): Promise<{
-    payment_session_id: string;
-    bookingId: string;
-    amount: number;
-    breakdown: { service_cost: number; platform_fee: number; insurance: number };
-    available_methods: Array<{
-      method_type: string;
-      display_name: string;
-      fee: string;
-      processing_time: string;
-    }>;
-    expires_at: string;
+    booking_id: string;
+    total_amount: number;
+    agreed_price: number;
+    platform_fee: number;
   }> {
-    const amount = Number(dto.amount);
-    const platformFeeRate = 0.07;
-    const platformFee = Math.round(amount / (1 + platformFeeRate) * platformFeeRate * 100) / 100;
-    const serviceCost = Math.round((amount - platformFee) * 100) / 100;
-    const insurance = 0;
+    const contract = await this.bookingsService.findOneSmartContract(contractId);
 
-    const sessionId = `PSESS-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
+    if (contract.consumerId !== userId) {
+      throw new ForbiddenException('Access denied to this contract');
+    }
+
+    const booking = contract.booking;
+    if (!booking) {
+      throw new BadRequestException('Contract booking not found');
+    }
+
+    const totalAmount = Number(booking.totalAmount ?? 0);
+    const platformFee = Number(booking.platformFee ?? 0);
+    const agreedPrice = Number(booking.subtotal ?? totalAmount - platformFee);
 
     return {
-      payment_session_id: sessionId,
-      bookingId: dto.bookingId,
-      amount,
+      booking_id: contract.bookingId,
+      total_amount: totalAmount,
+      agreed_price: agreedPrice,
+      platform_fee: platformFee,
+    };
+  }
+
+  private formatSessionResponse(session: PaymentSession) {
+    return {
+      payment_session_id: session.session_id,
+      contract_id: session.contract_id,
+      booking_id: session.booking_id,
+      amount: session.total_amount,
       breakdown: {
-        service_cost: serviceCost,
-        platform_fee: platformFee,
-        insurance,
+        service_cost: session.service_amount,
+        platform_fee: session.platform_fee,
       },
       available_methods: [
-        { method_type: 'CARD', display_name: 'Credit/Debit Card', fee: '2.5%', processing_time: 'Instant' },
-        { method_type: 'GCASH', display_name: 'GCash', fee: 'Free', processing_time: 'Instant' },
-        { method_type: 'PAYMAYA', display_name: 'PayMaya', fee: 'Free', processing_time: 'Instant' },
-        { method_type: 'QRPH', display_name: 'QR.ph', fee: 'Free', processing_time: 'Instant' },
-        { method_type: 'INSTAPAY', display_name: 'InstaPay Bank Transfer', fee: '₱10', processing_time: 'Real-time' },
+        { method_type: 'GCASH', display_name: 'GCash', fee: 'Free' },
+        { method_type: 'PAYMAYA', display_name: 'PayMaya', fee: 'Free' },
+        { method_type: 'QRPH', display_name: 'QR.ph', fee: 'Free' },
+        { method_type: 'CARD', display_name: 'Credit/Debit Card', fee: '2.5%' },
+        { method_type: 'INSTAPAY', display_name: 'InstaPay', fee: '₱10' },
       ],
-      expires_at: expiresAt.toISOString(),
+      expires_at: session.expires_at,
     };
   }
 
   /**
-   * Process payment via Xendit. Returns payment URL or QR code and redirect flag.
+   * Process payment via Xendit (delegates to XenditPaymentService). Returns payment URL or QR code and redirect flag.
    */
   async xenditProcess(
-    userId: string,
+    _userId: string,
     dto: XenditProcessDto,
   ): Promise<{
     xendit_payment_id: string;
@@ -205,24 +296,37 @@ export class PaymentsService {
     redirect_required: boolean;
     expires_at: string;
   }> {
-    const xenditId = `XDT-${String(Date.now()).slice(-5)}`;
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 1);
+    const res = await this.xenditPaymentService.processPayment(dto);
+    return {
+      xendit_payment_id: res.xendit_payment_id,
+      payment_url: res.payment_url ?? '',
+      qr_code: res.qr_code ?? '',
+      redirect_required: res.redirect_required,
+      expires_at: res.expires_at ?? new Date().toISOString(),
+    };
+  }
 
-    const isQrPh = dto.payment_method === 'QRPH';
-    const paymentUrl = isQrPh
-      ? ''
-      : `https://checkout.xendit.co/web/${xenditId.slice(-5)}`;
-    const qrCode = isQrPh
-      ? 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-      : '';
+  async getPaymentStatus(sessionId: string, userId: string) {
+    const session = await this.paymentSessionRepository.findOne({
+      where: { session_id: sessionId },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Payment session not found');
+    }
+
+    if (session.buyer_id !== userId) {
+      throw new ForbiddenException('Access denied');
+    }
 
     return {
-      xendit_payment_id: xenditId,
-      payment_url: paymentUrl,
-      qr_code: qrCode,
-      redirect_required: !isQrPh,
-      expires_at: expiresAt.toISOString(),
+      payment_session_id: session.session_id,
+      xendit_payment_id: session.xendit_payment_id,
+      status: session.status,
+      payment_method: session.payment_method,
+      amount: Number(session.total_amount),
+      paid_at: session.paid_at,
+      expires_at: session.expires_at,
     };
   }
 

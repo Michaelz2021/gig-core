@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Booking, BookingStatus } from './entities/booking.entity';
+import { Contract } from './entities/contract.entity';
 import { SmartContract, SmartContractStatus } from './entities/smart-contract.entity';
 import { WorkProgressReport, ReportType } from './entities/work-progress-report.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
@@ -17,6 +18,8 @@ export class BookingsService {
   constructor(
     @InjectRepository(Booking)
     private readonly bookingRepository: Repository<Booking>,
+    @InjectRepository(Contract)
+    private readonly contractRepository: Repository<Contract>,
     @InjectRepository(SmartContract)
     private readonly smartContractRepository: Repository<SmartContract>,
     @InjectRepository(WorkProgressReport)
@@ -202,6 +205,22 @@ export class BookingsService {
     return booking;
   }
 
+  /**
+   * 예약 번호(booking_number)로 Booking 조회
+   */
+  async findOneByBookingNumber(bookingNumber: string): Promise<Booking> {
+    const booking = await this.bookingRepository.findOne({
+      where: { bookingNumber },
+      relations: ['service', 'consumer', 'provider', 'auction', 'auctionBid'],
+    });
+
+    if (!booking) {
+      throw new NotFoundException(`Booking with number ${bookingNumber} not found`);
+    }
+
+    return booking;
+  }
+
   async updateStatus(id: string, status: BookingStatus): Promise<Booking> {
     const booking = await this.findOne(id);
     booking.status = status;
@@ -351,6 +370,65 @@ export class BookingsService {
 
     if (!contract) {
       throw new NotFoundException(`Smart contract with ID ${id} not found`);
+    }
+
+    return contract;
+  }
+
+  /**
+   * Get contract by booking number (DB contracts 테이블에서 예약 번호로 계약서 조회)
+   */
+  async findOneSmartContractByBookingNumber(bookingNumber: string): Promise<Contract> {
+    const contract = await this.contractRepository.findOne({
+      where: { booking_number: bookingNumber },
+      relations: ['booking', 'consumer', 'provider'],
+    });
+
+    if (!contract) {
+      throw new NotFoundException(
+        `Contract for booking ${bookingNumber} not found`,
+      );
+    }
+
+    return contract;
+  }
+
+  /**
+   * Sign contract by booking_number (DB contracts 테이블 조회 후 consumer_signed_at 갱신)
+   */
+  async signContractByBookingNumber(
+    bookingNumber: string,
+    userId: string,
+    _signature: string,
+    _ip: string,
+  ): Promise<Contract> {
+    const contract = await this.contractRepository.findOne({
+      where: { booking_number: bookingNumber },
+    });
+
+    if (!contract) {
+      throw new NotFoundException(`Contract for booking ${bookingNumber} not found`);
+    }
+
+    if (contract.consumer_id !== userId) {
+      throw new ForbiddenException('Only the consumer can sign this contract');
+    }
+
+    if (contract.consumer_signed_at) {
+      throw new BadRequestException('Contract already signed by consumer');
+    }
+
+    contract.consumer_signed_at = new Date();
+    contract.updated_at = new Date();
+    contract.status = 'awaiting_provider_sign';
+    await this.contractRepository.save(contract);
+
+    const booking = await this.bookingRepository.findOne({
+      where: { bookingNumber },
+    });
+    if (booking) {
+      booking.status = BookingStatus.AWAITING_PROVIDER_SIGN;
+      await this.bookingRepository.save(booking);
     }
 
     return contract;
