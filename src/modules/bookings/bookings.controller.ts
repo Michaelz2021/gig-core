@@ -231,37 +231,58 @@ export class BookingsController {
     return this.bookingsService.findAllSmartContracts(bookingId, user.id);
   }
 
-  @Get('smart-contracts/:id')
-  @ApiOperation({ summary: 'Get smart contract details' })
-  @ApiParam({ name: 'id', description: 'Contract ID' })
+  @Get('smart-contracts/:booking_number')
+  @ApiOperation({
+    summary: 'Get smart contract by booking number',
+    description: '예약 번호(booking_number)로 계약서 상세 조회. Path 파라미터는 booking_number 입니다.',
+    operationId: 'getSmartContractByBookingNumber',
+  })
+  @ApiParam({
+    name: 'booking_number',
+    description: 'Booking number (예약 번호, e.g. BOOK-1770013267973-ADRLFB5T)',
+    example: 'BOOK-1770013267973-ADRLFB5T',
+    schema: { type: 'string', example: 'BOOK-1770013267973-ADRLFB5T' },
+  })
   @ApiOkResponse({ description: 'Smart contract details returned' })
-  findOneSmartContract(@Param('id') id: string) {
-    return this.bookingsService.findOneSmartContract(id);
+  findOneSmartContract(@Param('booking_number') bookingNumber: string) {
+    return this.bookingsService.findOneSmartContractByBookingNumber(bookingNumber);
   }
 
-  @Post('smart-contracts/:id/sign')
-  @ApiOperation({ summary: 'Sign smart contract' })
-  @ApiParam({ name: 'id', description: 'Contract ID' })
+  @Post('smart-contracts/:booking_number/sign')
+  @ApiOperation({ summary: 'Sign smart contract (consumer signs; sets consumer_signed_at)' })
+  @ApiParam({
+    name: 'booking_number',
+    description: 'Booking number (예약 번호)',
+    example: 'BOOK-1770013267973-ADRLFB5TO',
+    schema: { type: 'string', example: 'BOOK-1770013267973-ADRLFB5TO' },
+  })
   @ApiOkResponse({ description: 'Contract signed successfully' })
   signContract(
     @GetUser() user: any,
-    @Param('id') id: string,
+    @Param('booking_number') bookingNumber: string,
     @Body() signDto: SignContractDto,
     @Req() req: any,
   ) {
     const ip = req.ip || req.connection.remoteAddress;
-    return this.bookingsService.signContract(id, user.id, signDto.signature, ip);
+    return this.bookingsService.signContractByBookingNumber(bookingNumber, user.id, signDto.signature, ip);
   }
 
-  @Post('smart-contracts/:id/complete')
-  @ApiOperation({ summary: 'Complete smart contract' })
-  @ApiParam({ name: 'id', description: 'Contract ID' })
+  @Post('smart-contracts/:booking_number/complete')
+  @ApiOperation({
+    summary: 'Complete contract by booking number (provider signs; set provider_signed_at & booking in_progress)',
+    description: '예약 번호(booking_number)로 contracts 테이블의 provider_signed_at 을 기록하고, bookings.status 를 in_progress 로 변경합니다.',
+  })
+  @ApiParam({
+    name: 'booking_number',
+    description: 'Booking number (예약 번호)',
+    example: 'BOOK-1770013267973-ADRLFB5T',
+    schema: { type: 'string', example: 'BOOK-1770013267973-ADRLFB5T' },
+  })
   @ApiOkResponse({ description: 'Contract completed successfully' })
   completeContract(
     @GetUser() user: any,
-    @Param('id') id: string,
-    @Body() body: { completionProof: any },
+    @Param('booking_number') bookingNumber: string,
   ) {
-    return this.bookingsService.completeContract(id, user.id, body.completionProof);
+    return this.bookingsService.completeContractByBookingNumber(bookingNumber, user.id);
   }
 }

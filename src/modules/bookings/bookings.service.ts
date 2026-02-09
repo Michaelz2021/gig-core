@@ -434,6 +434,58 @@ export class BookingsService {
     return contract;
   }
 
+  /**
+   * Provider가 계약에 서명 완료(complete)하는 API
+   * - Path 파라미터: booking_number
+   * - contracts.provider_signed_at 에 timestamp 기록
+   * - contracts.status 를 'IN_PROGRESS' 로 변경
+   * - bookings.status 를 BookingStatus.IN_PROGRESS 로 변경
+   */
+  async completeContractByBookingNumber(
+    bookingNumber: string,
+    userId: string,
+  ): Promise<Contract> {
+    // 1) contracts 테이블에서 계약 조회
+    const contract = await this.contractRepository.findOne({
+      where: { booking_number: bookingNumber },
+    });
+
+    if (!contract) {
+      throw new NotFoundException(`Contract for booking ${bookingNumber} not found`);
+    }
+
+    // 2) bookings + provider.user 관계를 통해 현재 사용자가 이 예약의 provider 인지 확인
+    const booking = await this.bookingRepository.findOne({
+      where: { bookingNumber },
+      relations: ['provider', 'provider.user'],
+    });
+
+    if (!booking || !booking.provider) {
+      throw new NotFoundException(`Booking with number ${bookingNumber} not found or has no provider`);
+    }
+
+    // provider_id 컬럼은 Provider 엔티티의 id 이고,
+    // JWT의 userId 는 User 엔티티의 id 이므로 provider.userId 와 비교해야 함
+    if (booking.provider.userId !== userId) {
+      throw new ForbiddenException('Only the provider can complete this contract');
+    }
+
+    if (contract.provider_signed_at) {
+      throw new BadRequestException('Contract already signed by provider');
+    }
+
+    const now = new Date();
+    contract.provider_signed_at = now;
+    contract.updated_at = now;
+    contract.status = 'IN_PROGRESS';
+    await this.contractRepository.save(contract);
+
+    booking.status = BookingStatus.IN_PROGRESS;
+    await this.bookingRepository.save(booking);
+
+    return contract;
+  }
+
   async signContract(contractId: string, userId: string, signature: string, ip: string): Promise<SmartContract> {
     const contract = await this.findOneSmartContract(contractId);
 
