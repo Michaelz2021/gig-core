@@ -115,6 +115,44 @@ export class PaymentsController {
     return this.paymentsService.withdraw(user.id, withdrawDto);
   }
 
+  /**
+   * GET /api/v1/payment/payout-summary
+   * 앱에서 호출하는 경로 (provider 출금 요약)
+   */
+  @Get('payout-summary')
+  @ApiOperation({
+    summary: 'Get payout summary (provider)',
+    description: '출금 가능 금액/건수, 출금 가능 목록, 최근 출금 내역을 반환합니다.',
+  })
+  @ApiOkResponse({
+    description: 'Payout summary returned',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        data: {
+          type: 'object',
+          properties: {
+            summary: {
+              type: 'object',
+              properties: {
+                total_available: { type: 'number' },
+                pending_amount: { type: 'number' },
+                ready_count: { type: 'number' },
+                pending_count: { type: 'number' },
+              },
+            },
+            available_payouts: { type: 'array', items: { type: 'object' } },
+            recent_payouts: { type: 'array', items: { type: 'object' } },
+          },
+        },
+      },
+    },
+  })
+  getPayoutSummary(@GetUser() user: any) {
+    return this.paymentsService.getPayoutSummary(user.id);
+  }
+
   // Payment Session Initialization (contract payment)
   @Post('contracts/:contractId/initialize')
   @ApiOperation({
@@ -219,9 +257,28 @@ export class PaymentsController {
   @Post('xenditprocess')
   @ApiOperation({
     summary: 'Process payment via Xendit',
-    description: 'Submit payment with selected method (CARD, GCASH, PAYMAYA, QRPH, INSTAPAY). Returns payment URL for redirect or QR code for QR.ph.',
+    description: 'Submit payment with selected method (CARD, GCASH, PAYMAYA, QRPH, INSTAPAY). Returns payment URL for redirect or QR code for QR.ph. Body는 반드시 유효한 JSON (쉼표·따옴표 확인).',
   })
-  @ApiBody({ type: XenditProcessDto })
+  @ApiBody({
+    type: XenditProcessDto,
+    examples: {
+      card: {
+        summary: 'CARD 결제',
+        value: {
+          payment_session_id: 'PSESS-1771034864760',
+          booking_id: '16ce453c-428a-4b1f-b685-1d336e4d339d',
+          payment_method: 'CARD',
+          return_url: 'gigmarket://payment/callback',
+          card_details: {
+            card_number: '4000000000000002',
+            exp_month: '12',
+            exp_year: '2028',
+            cvv: '123',
+          },
+        },
+      },
+    },
+  })
   @ApiOkResponse({
     description: 'Payment created; redirect user to payment_url or display qr_code',
     schema: {

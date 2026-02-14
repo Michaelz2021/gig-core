@@ -20,11 +20,24 @@ export enum BookingStatus {
   AWAITING_CONFIRMATION = 'awaiting_confirmation',
   CONFIRMED = 'confirmed',
   IN_PROGRESS = 'in_progress',
+  /** 소비자 서명 완료, 제공자 서명 대기 */
+  AWAITING_PROVIDER_SIGN = 'awaiting_provider_sign',
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
   DISPUTED = 'disputed',
   /** @deprecated DB has no 'pending'; use PENDING_PAYMENT or PENDING_ACCEPTANCE */
   PENDING = 'pending',
+}
+
+export enum BookingPaymentStatus {
+  PENDING_APPROVAL = 'PENDING_APPROVAL',
+  APPROVED = 'APPROVED',
+}
+
+export enum BookingPayoutStatus {
+  AVAILABLE = 'AVAILABLE',
+  PROCESSING = 'PROCESSING',
+  PAID = 'PAID',
 }
 
 @Entity('bookings')
@@ -105,7 +118,7 @@ export class Booking {
   @Column({ name: 'task', type: 'text', nullable: true })
   task?: string; // 서비스 작업 내용 (계약서에서 명문화될 수 있는 경우)
 
-  // 상태 (DB booking_status_enum: pending_payment, pending_acceptance, confirmed, in_progress, awaiting_confirmation, completed, cancelled, disputed)
+  // 상태 (DB booking_status_enum: pending_payment, pending_acceptance, confirmed, in_progress, awaiting_confirmation, awaiting_provider_sign, completed, cancelled, disputed)
   @Column({
     name: 'status',
     type: 'enum',
@@ -113,6 +126,34 @@ export class Booking {
     default: BookingStatus.PENDING_PAYMENT,
   })
   status: BookingStatus;
+
+  /**
+   * 결제/출금 상태 (booking 중심 payout API용, DB에는 VARCHAR 로 매핑)
+   */
+  @Column({
+    name: 'payment_status',
+    type: 'varchar',
+    length: 20,
+    default: BookingPaymentStatus.PENDING_APPROVAL,
+  })
+  paymentStatus: BookingPaymentStatus;
+
+  @Column({
+    name: 'payout_status',
+    type: 'varchar',
+    length: 20,
+    default: BookingPayoutStatus.AVAILABLE,
+  })
+  payoutStatus: BookingPayoutStatus;
+
+  @Column({ name: 'payment_approved_at', type: 'timestamp', nullable: true })
+  paymentApprovedAt?: Date;
+
+  @Column({ name: 'contract_id', type: 'varchar', length: 50, nullable: true })
+  contractId?: string;
+
+  @Column({ name: 'escrow_id', type: 'varchar', length: 50, nullable: true })
+  escrowId?: string;
 
   // 타임스탬프
   @Column({ name: 'actual_start_time', type: 'timestamp', nullable: true })

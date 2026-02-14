@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, GatewayTimeoutException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Payment, PaymentStatus, PaymentMethod } from './entities/payment.entity';
@@ -6,6 +6,8 @@ import { Transaction, TransactionStatus } from './entities/transaction.entity';
 import { Escrow, EscrowStatus } from './entities/escrow.entity';
 import { Wallet, WalletStatus } from './entities/wallet.entity';
 import { PaymentSession } from './entities/payment-session.entity';
+import { EscrowAccount } from './entities/escrow-account.entity';
+import { Payout } from './entities/payout.entity';
 import { ProcessPaymentDto } from './dto/process-payment.dto';
 import { WalletTopupDto } from './dto/wallet-topup.dto';
 import { XenditProcessDto } from './dto/xendit-process.dto';
@@ -13,8 +15,13 @@ import { BookingsService } from '../bookings/bookings.service';
 import { UsersService } from '../users/users.service';
 import { XenditPaymentService } from './services/xendit-payment.service';
 
+/** Initialize payment session 타임아웃(ms). DB/외부 지연 시 무한 로딩 방지 */
+const INITIALIZE_SESSION_TIMEOUT_MS = 15_000;
+
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
@@ -26,6 +33,10 @@ export class PaymentsService {
     private readonly walletRepository: Repository<Wallet>,
     @InjectRepository(PaymentSession)
     private readonly paymentSessionRepository: Repository<PaymentSession>,
+    @InjectRepository(EscrowAccount)
+    private readonly escrowAccountRepository: Repository<EscrowAccount>,
+    @InjectRepository(Payout)
+    private readonly payoutRepository: Repository<Payout>,
     private readonly bookingsService: BookingsService,
     private readonly usersService: UsersService,
     private readonly xenditPaymentService: XenditPaymentService,
@@ -188,46 +199,64 @@ export class PaymentsService {
   /**
    * Initialize a payment session by booking_number (계약서 없이 예약만 있는 경우).
    * booking_number로 booking 테이블 조회 후 동일한 출력 형식으로 반환.
+   * 타임아웃 적용으로 DB/외부 지연 시 무한 로딩 방지.
    */
   async initializePaymentSessionByBookingNumber(bookingNumber: string, userId: string) {
-    const booking = await this.bookingsService.findOneByBookingNumber(bookingNumber);
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('INITIALIZE_TIMEOUT')), INITIALIZE_SESSION_TIMEOUT_MS),
+    );
 
-    if (booking.consumerId !== userId) {
-      throw new ForbiddenException('Access denied to this booking');
-    }
+    const work = (async () => {
+      const booking = await this.bookingsService.findOneByBookingNumber(bookingNumber);
 
-    const bookingId = booking.id;
-    const totalAmount = Number(booking.totalAmount ?? 0);
-    const platformFee = Number(booking.platformFee ?? 0);
-    const agreedPrice = Number(booking.subtotal ?? totalAmount - platformFee);
+      if (booking.consumerId !== userId) {
+        throw new ForbiddenException('Access denied to this booking');
+      }
 
-    // 기존 세션 확인 (booking_id 기준, contract 미생성 시 contract_id는 booking_id로 저장)
-    const existing = await this.paymentSessionRepository.findOne({
-      where: {
+      const bookingId = booking.id;
+      const totalAmount = Number(booking.totalAmount ?? 0);
+      const platformFee = Number(booking.platformFee ?? 0);
+      const agreedPrice = Number(booking.subtotal ?? totalAmount - platformFee);
+
+      const existing = await this.paymentSessionRepository.findOne({
+        where: {
+          booking_id: bookingId,
+          status: In(['PENDING', 'PROCESSING']),
+        },
+      });
+
+      if (existing) {
+        return this.formatSessionResponse(existing);
+      }
+
+      const sessionId = `PSESS-${Date.now()}`;
+      const session = this.paymentSessionRepository.create({
+        session_id: sessionId,
+        contract_id: bookingId,
         booking_id: bookingId,
-        status: In(['PENDING', 'PROCESSING']),
-      },
-    });
+        buyer_id: userId,
+        total_amount: totalAmount,
+        service_amount: agreedPrice,
+        platform_fee: platformFee,
+        status: 'PENDING',
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
 
-    if (existing) {
-      return this.formatSessionResponse(existing);
+      await this.paymentSessionRepository.save(session);
+      return this.formatSessionResponse(session);
+    })();
+
+    try {
+      return await Promise.race([work, timeoutPromise]);
+    } catch (e: any) {
+      if (e?.message === 'INITIALIZE_TIMEOUT') {
+        this.logger.warn(`initializePaymentSessionByBookingNumber timeout (${INITIALIZE_SESSION_TIMEOUT_MS}ms)`);
+        throw new GatewayTimeoutException(
+          'Request timed out. Please check the booking number and try again.',
+        );
+      }
+      throw e;
     }
-
-    const sessionId = `PSESS-${Date.now()}`;
-    const session = this.paymentSessionRepository.create({
-      session_id: sessionId,
-      contract_id: bookingId, // 계약 미생성 시 booking_id를 placeholder로 사용
-      booking_id: bookingId,
-      buyer_id: userId,
-      total_amount: totalAmount,
-      service_amount: agreedPrice,
-      platform_fee: platformFee,
-      status: 'PENDING',
-      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
-    });
-
-    await this.paymentSessionRepository.save(session);
-    return this.formatSessionResponse(session);
   }
 
   private async validateContract(
@@ -280,6 +309,131 @@ export class PaymentsService {
         { method_type: 'INSTAPAY', display_name: 'InstaPay', fee: '₱10' },
       ],
       expires_at: session.expires_at,
+    };
+  }
+
+  /**
+   * Payout summary for provider: 출금 가능 목록(escrow_accounts) + 최근 출금 내역(payouts)
+   */
+  async getPayoutSummary(userId: string): Promise<{
+    success: boolean;
+    data: {
+      summary: {
+        total_available: number;
+        pending_amount: number;
+        ready_count: number;
+        pending_count: number;
+      };
+      available_payouts: Array<{
+        payout_id: string;
+        booking_number: string;
+        service_name: string;
+        amount: number;
+        status: string;
+        completed_at: string | null;
+        contract_id: string;
+        escrow_id: string;
+      }>;
+      recent_payouts: Array<{
+        payout_id: string;
+        booking_number: string;
+        amount: number;
+        paid_at: string | null;
+      }>;
+    };
+  }> {
+    // 1) JWT userId -> Provider 테이블의 providerId 매핑
+    const provider = await this.usersService.getProviderByUserId(userId);
+
+    // provider 프로필이 없는 경우: 출금 가능 금액 0, 히스토리도 없음
+    if (!provider) {
+      return {
+        success: true,
+        data: {
+          summary: {
+            total_available: 0,
+            pending_amount: 0,
+            ready_count: 0,
+            pending_count: 0,
+          },
+          available_payouts: [],
+          recent_payouts: [],
+        },
+      };
+    }
+
+    const providerId = provider.id; // providers.id (UUID)
+
+    // 2) 출금 가능: escrow_accounts (provider_id = providers.id, payout_id IS NULL, disbursement_status = 'PENDING')
+    const availableWithNull = await this.escrowAccountRepository
+      .createQueryBuilder('e')
+      .where('e.provider_id = :providerId', { providerId })
+      .andWhere('e.payout_id IS NULL')
+      .andWhere("e.disbursement_status = 'PENDING'")
+      .orderBy('e.created_at', 'DESC')
+      .getMany();
+
+    const available_payouts: Array<{
+      payout_id: string;
+      booking_number: string;
+      service_name: string;
+      amount: number;
+      status: string;
+      completed_at: string | null;
+      contract_id: string;
+      escrow_id: string;
+    }> = [];
+    let total_available = 0;
+
+    for (const escrow of availableWithNull) {
+      let bookingNumber = '';
+      let serviceName = '';
+      try {
+        const booking = await this.bookingsService.findOne(escrow.booking_id);
+        bookingNumber = booking.bookingNumber ?? '';
+        serviceName = booking.service?.title ?? booking.serviceDescription ?? 'Service';
+      } catch {
+        // booking 없으면 스킵하지 않고 기본값으로
+      }
+      const amount = Number(escrow.provider_amount ?? 0);
+      total_available += amount;
+      available_payouts.push({
+        payout_id: `PO-${escrow.booking_id}`,
+        booking_number: bookingNumber,
+        service_name: serviceName,
+        amount,
+        status: 'available',
+        completed_at: escrow.funded_at ? escrow.funded_at.toISOString() : null,
+        contract_id: escrow.contract_id,
+        escrow_id: escrow.escrow_id,
+      });
+    }
+
+    // 최근 출금 완료: payouts where user_id (JWT sub), status = COMPLETED
+    const recentPayoutRows = await this.payoutRepository.find({
+      where: { user_id: userId, status: 'COMPLETED' },
+      order: { completed_at: 'DESC' },
+      take: 5,
+    });
+    const recent_payouts = recentPayoutRows.map((p) => ({
+      payout_id: p.payout_id,
+      booking_number: '', // payout은 여러 booking 묶음일 수 있음
+      amount: Number(p.amount ?? 0),
+      paid_at: p.completed_at ? p.completed_at.toISOString() : null,
+    }));
+
+    return {
+      success: true,
+      data: {
+        summary: {
+          total_available,
+          pending_amount: 0, // 별도 “승인 대기” 정의 시 확장
+          ready_count: availableWithNull.length,
+          pending_count: 0,
+        },
+        available_payouts,
+        recent_payouts,
+      },
     };
   }
 

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber, IsPositive, IsString, IsOptional, IsUUID } from 'class-validator';
+import { IsNumber, IsPositive, IsString, IsOptional } from 'class-validator';
 
 export class SpendCreditsDto {
   @ApiProperty({
@@ -28,21 +28,12 @@ export class SpendCreditsDto {
   description?: string;
 
   @ApiProperty({
-    description: 'Related auction ID (optional)',
-    example: 'a98a4eb5-4b1e-4851-99c6-f92806ae5f61',
+    description: 'Related booking number (optional)',
+    example: 'BOOK-1770436511571-SKNP2R5QV',
     required: false,
   })
   @IsOptional()
-  @IsUUID()
-  relatedAuctionId?: string;
-
-  @ApiProperty({
-    description: 'Related booking ID (optional)',
-    example: 'a98a4eb5-4b1e-4851-99c6-f92806ae5f61',
-    required: false,
-  })
-  @IsOptional()
-  @IsUUID()
-  relatedBookingId?: string;
+  @IsString()
+  relatedBookingNumber?: string;
 }
 

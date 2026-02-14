@@ -8,19 +8,64 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+import * as express from 'express';
+
+/**
+ * JSON 파싱 시 흔한 오류(trailing comma, 값 끝 따옴표 중복 등)를 보정하여 파싱.
+ * Swagger/클라이언트에서 "Expected ',' or '}' after property value" 400 방지.
+ */
+function parseJsonLenient(raw: string): any {
+  let s = raw.replace(/^\uFEFF/, ''); // BOM 제거
+  // 값 끝 따옴표 중복 보정: "PSESS-xxx""  -> "PSESS-xxx"  (한 줄: "" 뒤에 , } ] / 여러 줄: "" 뒤에 줄바꿈 후 ")
+  s = s.replace(/""(\s*)([,}\]])/g, '"$1$2');
+  s = s.replace(/""(\s*)"/g, '"$1"'); // "" 다음에 오는 키 시작 따옴표
+  try {
+    return JSON.parse(s);
+  } catch {
+    // trailing comma 제거: , } 또는 , ] 앞의 쉼표 제거
+    const fixed = s.replace(/,(\s*[}\]])/g, '$1');
+    return JSON.parse(fixed);
+  }
+}
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 3000);
   const apiPrefix = configService.get<string>('API_PREFIX', 'api/v1');
-  
-  // Static files (BEFORE setGlobalPrefix): uploads only. All front UI is served by gig-front (/var/www/gig-front, port 5173).
-  const uploadsPath = join(__dirname, '..', 'uploads');
-  const express = require('express');
+
   const expressApp = app.getHttpAdapter().getInstance();
 
+  // application/json 요청: raw 수신 후 lenient 파싱 (trailing comma 등 허용)
+  expressApp.use(
+    express.raw({ type: 'application/json', limit: '10mb' }),
+    (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      if (Buffer.isBuffer(req.body) && req.get('content-type')?.includes('application/json')) {
+        const str = req.body.toString('utf8');
+        try {
+          (req as any).body = parseJsonLenient(str);
+        } catch (e) {
+          next(e);
+          return;
+        }
+      }
+      next();
+    },
+  );
+  // application/json이 아닐 때만 기본 json 파서 사용 (json 요청은 위에서 이미 파싱됨)
+  expressApp.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.get('content-type')?.includes('application/json')) {
+      return next();
+    }
+    express.json({ limit: '10mb' })(req, res, next);
+  });
+  expressApp.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+  // Static files (BEFORE setGlobalPrefix)
+  const uploadsPath = join(__dirname, '..', 'uploads');
   expressApp.use('/uploads', express.static(uploadsPath));
 
   // Global prefix (only applies to API routes registered after this)
@@ -33,11 +78,13 @@ async function bootstrap() {
   // 프론트엔드와 백엔드가 분리되어 있으므로 CORS 설정 필요
   const corsOrigin = configService.get<string>('CORS_ORIGIN', '*').split(',');
   const allowedOrigins = [
-    'http://localhost:5173',       // 프론트엔드 개발 서버
-    'http://localhost:3000',     // Swagger/API 같은 서버 (로컬)
-    'http://43.201.114.64:5173', // 프론트엔드 프로덕션
-    'http://43.201.114.64:3000', // Swagger/API 같은 서버 (원격)
-    ...corsOrigin.filter(origin => origin !== '*'),
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://43.201.114.64:5173',
+    'http://43.201.114.64:3000',
+    'http://13.125.20.235:5173',  // 프론트/API (서버 IP)
+    'http://13.125.20.235:3000',  // Swagger/API - 이 오리진 없으면 브라우저에서 "Failed to fetch" 발생
+    ...corsOrigin.filter((origin) => origin.trim() !== '' && origin !== '*'),
   ];
 
   app.enableCors({
@@ -71,10 +118,16 @@ async function bootstrap() {
     .setTitle('AI TrustTrade Core API')
     .setDescription(
       'API documentation for AI TrustTrade Core Service.\n\n' +
-      '**Avoid 401 (protected APIs):** 1) Obtain accessToken via POST /api/v1/auth/login → 2) Click **Authorize** above and paste the accessToken only (do not type Bearer) → 3) Click **Authorize** → **Close** then execute the request.',
+      '**인증 (401 방지):** 1) POST /api/v1/auth/login 으로 accessToken 발급 → 2) 상단 **Authorize** 클릭 후 토큰만 붙여넣기 (Bearer 제외) → **Authorize** → **Close**\n\n' +
+      '**리워드 결제 테스트 순서 (rewards):**\n' +
+      '1. **POST /rewards/buy/initialization** — credits, reason, description 보내면 `payment_session_id` 반환\n' +
+      '2. **POST /rewards/buy/request** — 위에서 받은 `payment_session_id` + payment_method, return_url, (CARD면 card_details) 전송 → Xendit 결제 생성, payment_url 등 반환\n' +
+      '3. 결제 완료 시 웹훅으로 reward_credits / reward_credit_transactions 자동 반영',
     )
     .setVersion('1.0.0')
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'access-token')
+    .addTag('rewards', '리워드 크레딧: 잔액/거래내역, 구매 초기화·결제 요청(Xendit)')
+    .addTag('payments', '결제: wallet, booking 초기화, Xendit 처리, 상태 조회')
     .build();
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig, {
     operationIdFactory: (controllerKey: string, methodKey: string) => methodKey,

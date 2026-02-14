@@ -38,13 +38,17 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       try {
         const token = authHeader.replace(/^Bearer\s+/i, '').trim();
         const blacklistedKey = `blacklist:access:${token}`;
-        const isBlacklisted = await this.redisClient.get(blacklistedKey);
+        const redisGetWithTimeout = Promise.race([
+          this.redisClient.get(blacklistedKey),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+        ]);
+        const isBlacklisted = await redisGetWithTimeout;
         if (isBlacklisted) {
           throw new UnauthorizedException('Token has been revoked');
         }
       } catch (e) {
         if (e instanceof UnauthorizedException) throw e;
-        // Redis error (e.g. client closed): skip blacklist check, continue to JWT validation
+        // Redis error or timeout: skip blacklist check, continue to JWT validation
       }
     }
 
