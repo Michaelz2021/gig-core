@@ -59,6 +59,9 @@ export class AuctionBid {
   @Column({ type: 'date', nullable: true, name: 'proposed_completion_date' })
   proposedCompletionDate: Date;
 
+  @Column({ type: 'jsonb', nullable: true, name: 'priceBreakdown' })
+  priceBreakdown: Array<{ item: string; amount: number }>;
+
   @Column({ type: 'text', nullable: true, name: 'additional_comment' })
   additionalComment?: string;
 

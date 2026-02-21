@@ -1,4 +1,4 @@
-import { Injectable, HttpException, ConflictException, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, HttpException, ConflictException, BadRequestException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Inject } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
@@ -50,10 +50,11 @@ export class AuthService {
         411,
       );
     }
-    console.log('[AuthService] Checking email duplication for:', registerDto.email);
-    const existingUser = await this.usersService.findByEmail(registerDto.email);
+    const email = registerDto.email.trim().toLowerCase();
+    console.log('[AuthService] Checking email duplication for:', email);
+    const existingUser = await this.usersService.findByEmail(email);
     if (existingUser) {
-      console.log('[AuthService] Email already exists:', registerDto.email, 'User ID:', existingUser.id);
+      console.log('[AuthService] Email already exists:', email, 'User ID:', existingUser.id);
       throw new ConflictException({
         message: 'Registration failed: email already registered',
         errors: {
@@ -61,7 +62,7 @@ export class AuthService {
         },
       });
     }
-    console.log('[AuthService] Email is available:', registerDto.email);
+    console.log('[AuthService] Email is available:', email);
     if (!registerDto.phone) {
       throw new HttpException(
         {
@@ -121,7 +122,7 @@ export class AuthService {
     }
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const emailVerificationToken = this.jwtService.sign(
-      { email: registerDto.email, type: 'email_verification' },
+      { email, type: 'email_verification' },
       { expiresIn: '24h' },
     );
     let smsSent = false;
@@ -133,21 +134,23 @@ export class AuthService {
     }
     let emailSent = false;
     try {
-      const emailResult = await this.emailService.sendVerificationEmail(registerDto.email, emailVerificationToken);
+      const emailResult = await this.emailService.sendVerificationEmail(email, emailVerificationToken);
       emailSent = emailResult.success === true;
+      console.log(`[AuthService] SendGrid verification email sent: ${emailSent}, to: ${email}${emailResult.messageId ? `, messageId=${emailResult.messageId}` : ''}`);
     } catch (error) {
-      console.error('Failed to send verification email:', error);
-      console.log(`[EMAIL VERIFICATION TOKEN] Email: ${registerDto.email}, Token: ${emailVerificationToken}`);
+      console.error('[AuthService] Failed to send verification email:', error);
+      console.log(`[AuthService] SendGrid verification email sent: false, to: ${email}`);
+      console.log(`[EMAIL VERIFICATION TOKEN] Email: ${email}, Token: ${emailVerificationToken}`);
     }
     if (!emailSent) {
-      console.log(`[EMAIL VERIFICATION TOKEN] Email: ${registerDto.email}, Token: ${emailVerificationToken}`);
+      console.log(`[EMAIL VERIFICATION TOKEN] Email: ${email}, Token: ${emailVerificationToken}`);
     }
     const redisReady = this.redisClient && (this.redisClient.isReady === true);
     if (redisReady) {
       try {
         const otpKey = `otp:${registerDto.phone}`;
         await this.redisClient.setEx(otpKey, 300, otp);
-        const emailTokenKey = `email_verification:${registerDto.email}`;
+        const emailTokenKey = `email_verification:${email}`;
         await this.redisClient.setEx(emailTokenKey, 24 * 60 * 60, emailVerificationToken);
       } catch (redisErr: any) {
         console.error('[AuthService] Redis unavailable during register (OTP/email token not stored):', redisErr?.message ?? redisErr);
@@ -201,7 +204,7 @@ export class AuthService {
       validatedServiceCategoryIds = uniqueIds;
     }
     const user = await this.usersService.create({
-      email: registerDto.email,
+      email,
       phone: registerDto.phone,
       firstName: registerDto.firstName,
       lastName: registerDto.lastName,
@@ -224,7 +227,7 @@ export class AuthService {
     return {
       message,
       phone: registerDto.phone,
-      email: registerDto.email,
+      email,
       smsSent,
       emailSent,
       otp: process.env.NODE_ENV === 'development' ? otp : undefined,
@@ -267,6 +270,84 @@ export class AuthService {
     }
   }
 
+  /**
+   * JWT로 식별된 사용자의 DB 등록 전화번호로 SMS OTP 발송.
+   * Redis에 otp:${phone} 으로 저장하여 verify-otp에서 검증.
+   */
+  async requestOtp(userId: string) {
+    const user = await this.usersService.findOne(userId);
+    if (!user) {
+      throw new BadRequestException({
+        message: 'User not found',
+        errors: { user: 'User not found.' },
+      });
+    }
+    const phone = user.phone;
+    if (!phone || typeof phone !== 'string' || !phone.trim()) {
+      throw new BadRequestException({
+        message: 'Phone number not registered',
+        errors: {
+          phone: 'No mobile number is registered for this account. Please update your profile with a Philippine mobile number.',
+        },
+      });
+    }
+    const trimmedPhone = phone.trim();
+    if (!PhoneValidator.isValidPhilippineMobile(trimmedPhone)) {
+      throw new BadRequestException({
+        message: 'Invalid phone format',
+        errors: {
+          phone: 'Registered mobile number format is invalid. Please update your profile with a valid Philippine mobile number.',
+        },
+      });
+    }
+    if (!this.redisClient) {
+      throw new BadRequestException({
+        message: 'OTP service unavailable',
+        errors: {
+          otp: 'OTP service is temporarily unavailable. Please try again later.',
+        },
+      });
+    }
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpKey = `otp:${trimmedPhone}`;
+    try {
+      await this.redisClient.setEx(otpKey, 300, otp);
+    } catch (redisErr: any) {
+      console.error('[AuthService] Redis unavailable during requestOtp:', redisErr?.message ?? redisErr);
+      throw new BadRequestException({
+        message: 'OTP service unavailable',
+        errors: {
+          otp: 'OTP service is temporarily unavailable. Please try again later.',
+        },
+      });
+    }
+    let smsSent = false;
+    try {
+      await this.smsService.sendOTP(trimmedPhone, otp);
+      smsSent = true;
+    } catch (error: any) {
+      console.error('[AuthService] Failed to send OTP SMS in requestOtp:', error);
+      try {
+        await this.redisClient.del(otpKey);
+      } catch {
+        // best-effort
+      }
+      throw new HttpException(
+        {
+          message: 'Failed to send OTP SMS',
+          error: error?.message ?? String(error),
+        },
+        500,
+      );
+    }
+    return {
+      message: 'OTP sent to your registered mobile number',
+      phone: trimmedPhone,
+      smsSent: true,
+      ...(process.env.NODE_ENV === 'development' ? { otp } : {}),
+    };
+  }
+
   async verifyEmail(token: string) {
     try {
       const payload = this.jwtService.verify(token);
@@ -278,7 +359,7 @@ export class AuthService {
           },
         });
       }
-      const email = payload.email;
+      const email = (payload.email || '').trim().toLowerCase();
       if (!email) {
         throw new BadRequestException({
           message: 'Email verification failed: email not found in token',
@@ -323,6 +404,7 @@ export class AuthService {
       await this.usersService.update(user.id, {
         isEmailVerified: true,
       });
+      await this.usersService.ensureProviderRowIfFullyVerified(user.id);
       if (this.redisClient) {
         try {
           const emailTokenKey = `email_verification:${email}`;
@@ -391,6 +473,7 @@ export class AuthService {
     await this.usersService.update(user.id, {
       isPhoneVerified: true,
     });
+    await this.usersService.ensureProviderRowIfFullyVerified(user.id);
     try {
       await this.redisClient.del(otpKey);
     } catch {
@@ -416,14 +499,38 @@ export class AuthService {
       console.log('[AuthService] Login failed: Invalid credentials for email:', loginDto.email);
       throw new UnauthorizedException('Invalid credentials');
     }
-    console.log('[AuthService] Login successful for user:', user.id, user.email);
-    const payload = { email: user.email, sub: user.id, userType: user.userType };
+
+    // 앱 컨텍스트(user-type) 검증: 요청한 앱을 이 사용자가 사용할 수 있는지 확인
+    const requestedContext = loginDto.userType?.toLowerCase();
+    if (requestedContext) {
+      const canUseConsumer = user.userType === UserType.CONSUMER || user.userType === UserType.BOTH;
+      const canUseProvider = user.userType === UserType.PROVIDER || user.userType === UserType.BOTH;
+      if (requestedContext === 'consumer' && !canUseConsumer) {
+        throw new ForbiddenException('This account does not have consumer access. Use the provider app or register as consumer.');
+      }
+      if (requestedContext === 'provider' && !canUseProvider) {
+        throw new ForbiddenException('This account does not have provider access. Use the consumer app or complete provider registration.');
+      }
+    }
+    const loginAs = requestedContext ?? user.userType;
+
+    console.log('[AuthService] Login successful for user:', user.id, user.email, 'loginAs:', loginAs);
+
+    // 전화번호가 전달된 경우 사용자 정보에 반영 (선택)
+    const updateData: { lastLoginAt: Date; phone?: string } = { lastLoginAt: new Date() };
+    if (loginDto.phone != null && String(loginDto.phone).trim() !== '') {
+      updateData.phone = loginDto.phone.trim();
+    }
+    await this.usersService.update(user.id, updateData);
+
+    const payload = { email: user.email, sub: user.id, userType: user.userType, loginAs };
     const accessToken = this.jwtService.sign(payload, { expiresIn: '30d' });
     const refreshToken = this.jwtService.sign(payload, { expiresIn: '90d' });
-    await this.usersService.update(user.id, { lastLoginAt: new Date() });
+
     return {
       accessToken,
       refreshToken,
+      loginAs,
       user: {
         id: user.id,
         email: user.email,

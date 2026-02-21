@@ -1,5 +1,5 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Req } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, HttpCode, HttpStatus, UseGuards, Req } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -79,10 +79,40 @@ export class AuthController {
     return this.authService.register(registerDto);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('request-otp')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Request OTP (SMS)',
+    description:
+      'JWT로 식별된 사용자의 DB 등록 전화번호(mobile)로 SMS OTP를 발송합니다. 발송된 OTP는 POST /auth/verify-otp 로 검증할 수 있습니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'OTP sent to registered mobile number',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'OTP sent to your registered mobile number' },
+        phone: { type: 'string', example: '+639123456789' },
+        smsSent: { type: 'boolean', example: true },
+        otp: { type: 'string', description: 'Development only' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'No phone registered or invalid format or OTP service unavailable' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async requestOtp(@GetUser() user: { id: string }) {
+    return this.authService.requestOtp(user.id);
+  }
+
   @Public()
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'OTP verification' })
+  @ApiOperation({
+    summary: 'OTP verification',
+    description: '전화번호와 OTP 코드로 검증 후, 해당 사용자의 is_phone_verified 를 true 로 업데이트합니다.',
+  })
   @ApiResponse({ status: 200, description: 'OTP verification successful' })
   @ApiResponse({ status: 400, description: 'Invalid or expired OTP' })
   async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
@@ -92,7 +122,24 @@ export class AuthController {
   @Public()
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Email verification' })
+  @ApiOperation({
+    summary: 'Email verification',
+    description:
+      '이메일 인증 링크의 token으로 계정을 인증합니다. Swagger 테스트 시: 1) POST /auth/register 호출 → 2) 응답의 **emailVerificationToken** 값을 복사 → 3) 아래 token 필드에 붙여넣기 (개발 환경에서만 응답에 토큰이 포함됩니다).',
+  })
+  @ApiBody({
+    type: VerifyEmailDto,
+    examples: {
+      fromRegister: {
+        summary: 'Register 응답에서 복사',
+        description: 'POST /auth/register 응답의 emailVerificationToken 값을 그대로 사용',
+        value: {
+          token:
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InVzZXJAZXhhbXBsZS5jb20iLCJ0eXBlIjoiZW1haWxfdmVyaWZpY2F0aW9uIiwiaWF0IjoxNzA4MDAwMDAwLCJleHAiOjE3MDg4NjQwMDB9.signature',
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 200, description: 'Email verification successful' })
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
   async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
@@ -128,9 +175,59 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Login' })
-  @ApiResponse({ status: 200, description: 'Login successful' })
+  @ApiOperation({
+    summary: 'Login',
+    description:
+      'email/password로 인증. **user-type**으로 앱 구분(gig-consumer: consumer, gig-provider: provider). ' +
+      'phone 전달 시 사용자 전화번호 동기화. consumer 전용 계정은 provider 앱 로그인 시 403.',
+  })
+  @ApiBody({
+    type: LoginDto,
+    examples: {
+      consumer: {
+        summary: 'gig-consumer 앱',
+        value: { email: 'test@example.com', password: 'Test1234!', 'user-type': 'consumer' },
+      },
+      provider: {
+        summary: 'gig-provider 앱',
+        value: { email: 'provider@example.com', password: 'Test123!', 'user-type': 'provider' },
+      },
+      withPhone: {
+        summary: '전화번호 동기화 포함',
+        value: {
+          email: 'test@example.com',
+          password: 'Test1234!',
+          'user-type': 'consumer',
+          phone: '+639123456789',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Login successful',
+    schema: {
+      type: 'object',
+      properties: {
+        accessToken: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIs...' },
+        refreshToken: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIs...' },
+        loginAs: { type: 'string', enum: ['consumer', 'provider'], description: '이번 로그인 앱 컨텍스트' },
+        user: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            email: { type: 'string' },
+            firstName: { type: 'string' },
+            lastName: { type: 'string' },
+            userType: { type: 'string', enum: ['consumer', 'provider', 'both'] },
+            serviceCategoryIds: { type: 'array', items: { type: 'string' } },
+          },
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiResponse({ status: 403, description: 'Requested app context not allowed for this account (e.g. provider app but user is consumer only)' })
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
   }

@@ -11,8 +11,8 @@ import { Booking } from '../../bookings/entities/booking.entity';
 import { User } from '../../users/entities/user.entity';
 
 export enum ReviewType {
-  PROVIDER_TO_CONSUMER = 'provider_to_consumer',
-  CONSUMER_TO_PROVIDER = 'consumer_to_provider',
+  CONSUMER = 'consumer',
+  PROVIDER = 'provider',
 }
 
 @Entity('reviews')

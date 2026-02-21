@@ -36,7 +36,7 @@ export class ReviewResponseDto {
 
   @ApiProperty({ 
     enum: ReviewType, 
-    example: ReviewType.CONSUMER_TO_PROVIDER,
+    example: ReviewType.CONSUMER,
     description: 'Review type' 
   })
   reviewType: ReviewType;
