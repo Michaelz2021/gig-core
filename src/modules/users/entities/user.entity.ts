@@ -114,9 +114,6 @@ export class User {
   @Column({ name: 'last_login_at', nullable: true })
   lastLoginAt: Date;
 
-  @Column({ name: 'device_tokens', type: 'jsonb', default: () => "'[]'::jsonb", nullable: true })
-  deviceTokens: string[];
-
   @Column({ name: 'service_category_ids', type: 'jsonb', default: () => "'[]'::jsonb", nullable: true })
   serviceCategoryIds: string[];
 

@@ -95,11 +95,13 @@ export class MatchingService {
         return;
       }
 
-      // Send notifications to all matching providers
+      // Send notifications to all matching providers (userId = users.id for device tokens)
       for (const provider of providers.providers) {
+        const userId = provider.userId ?? (await this.usersService.getUserIdByProviderId(provider.providerId));
+        if (!userId) continue;
         try {
           await this.notificationsService.send(
-            provider.providerId,
+            userId,
             NotificationType.AUCTION,
             'New Auction Available',
             `A new auction has been posted: ${auction.serviceTitle}`,
@@ -115,7 +117,7 @@ export class MatchingService {
             },
           );
         } catch (error) {
-          console.error(`Failed to send notification to provider ${provider.providerId}:`, error);
+          console.error(`Failed to send notification to provider ${provider.providerId} (userId ${userId}):`, error);
         }
       }
 

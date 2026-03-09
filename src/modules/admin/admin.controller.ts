@@ -8,6 +8,7 @@ import { SendTestEmailDto } from './dto/send-test-email.dto';
 import { NoticeType } from '../notices/entities/notice.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
+import { ProviderTrustScoreService } from '../users/services/provider-trust-score.service';
 
 @ApiTags('admin')
 @Controller('admin')
@@ -17,6 +18,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly notificationsService: NotificationsService,
+    private readonly providerTrustScoreService: ProviderTrustScoreService,
   ) {}
 
   @Get('dashboard')
@@ -212,5 +214,20 @@ export class AdminController {
   @ApiOkResponse({ description: 'User profile returned' })
   async getUserProfile(@Param('userId') userId: string) {
     return this.adminService.getUserProfile(userId);
+  }
+
+  @Post('provider-trust-scores/recalculate')
+  @ApiOperation({ summary: 'Recalculate provider trust scores (all providers)' })
+  @ApiOkResponse({ description: 'Recalculation result' })
+  async recalculateProviderTrustScores() {
+    return this.providerTrustScoreService.recalculateAllProviders();
+  }
+
+  @Post('provider-trust-scores/recalculate/:providerId')
+  @ApiOperation({ summary: 'Recalculate trust score for one provider' })
+  @ApiParam({ name: 'providerId', description: 'Provider UUID' })
+  @ApiOkResponse({ description: 'Updated trust score row' })
+  async recalculateProviderTrustScore(@Param('providerId') providerId: string) {
+    return this.providerTrustScoreService.recalculateForProvider(providerId);
   }
 }

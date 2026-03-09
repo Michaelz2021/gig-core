@@ -103,5 +103,13 @@ export class CreateProviderAdDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    example: [{ tag: 'image', url: 'https://example.com/1.jpg' }, { tag: 'video', url: 'https://example.com/1.mp4' }],
+    description: 'Media items (image/video) for the ad',
+  })
+  @IsOptional()
+  @IsArray()
+  media?: Array<{ tag: 'image' | 'video'; url: string }>;
 }
 

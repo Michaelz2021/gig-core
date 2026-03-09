@@ -10,6 +10,7 @@ import { BookingsService } from '../../bookings/bookings.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { NotificationType } from '../../notifications/entities/notification.entity';
 import { RewardsService } from '../../rewards/rewards.service';
+import { UsersService } from '../../users/users.service';
 
 @Injectable()
 export class XenditWebhookService {
@@ -26,6 +27,7 @@ export class XenditWebhookService {
     private notificationsService: NotificationsService,
     private configService: ConfigService,
     private rewardsService: RewardsService,
+    private usersService: UsersService,
   ) {}
 
   verifyWebhook(callbackToken: string): boolean {
@@ -113,16 +115,20 @@ export class XenditWebhookService {
       disbursement.completed_at = new Date();
       await this.disbursementRepo.save(disbursement);
       try {
-        await this.notificationsService.send(
-          disbursement.provider_id,
-          NotificationType.PAYMENT,
-          'Payout completed',
-          'Your disbursement has been completed.',
-          {
-            relatedEntityType: 'disbursement',
-            relatedEntityId: disbursement.disbursement_id,
-          },
-        );
+        // provider_id is providers.id; notifications need users.id
+        const userId = await this.usersService.getUserIdByProviderId(disbursement.provider_id);
+        if (userId) {
+          await this.notificationsService.send(
+            userId,
+            NotificationType.PAYMENT,
+            'Payout completed',
+            'Your disbursement has been completed.',
+            {
+              relatedEntityType: 'disbursement',
+              relatedEntityId: disbursement.disbursement_id,
+            },
+          );
+        }
       } catch (e) {
         // Don't fail webhook if notification fails
       }

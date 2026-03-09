@@ -18,6 +18,7 @@ import { UserProfile } from '../users/entities/user-profile.entity';
 import { AuctionBid } from '../matching/entities/auction-bid.entity';
 import { Provider } from '../users/entities/provider.entity';
 import { Portfolio } from '../users/entities/portfolio.entity';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { Portfolio } from '../users/entities/portfolio.entity';
     AuthModule,
     NoticesModule,
     NotificationsModule,
+    UsersModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

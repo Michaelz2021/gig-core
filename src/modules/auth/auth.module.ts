@@ -32,6 +32,6 @@ import { RedisModule } from '../../config/redis.module';
   ],
   controllers: [AuthController, VerifyEmailViewController, VerifyEmailResultViewController],
   providers: [AuthService, SmsService, EmailService, JwtStrategy],
-  exports: [AuthService, JwtModule, EmailService],
+  exports: [AuthService, JwtModule, EmailService, SmsService],
 })
 export class AuthModule {}

@@ -5,11 +5,13 @@ import { NotificationsService } from './notifications.service';
 import { FcmService } from './fcm.service';
 import { Notification } from './entities/notification.entity';
 import { UsersModule } from '../users/users.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Notification]),
     UsersModule,
+    AuthModule,
   ],
   controllers: [NotificationsController],
   providers: [NotificationsService, FcmService],

@@ -47,7 +47,15 @@ async function bootstrap() {
         const str = req.body.toString('utf8');
         try {
           (req as any).body = parseJsonLenient(str);
-        } catch (e) {
+        } catch (e: any) {
+          const posMatch = typeof e?.message === 'string' ? e.message.match(/position (\d+)/) : null;
+          const pos = posMatch ? parseInt(posMatch[1], 10) : null;
+          const snippet = pos != null && str.length > 0
+            ? str.slice(Math.max(0, pos - 30), pos + 30).replace(/\n/g, '\\n')
+            : str.slice(0, 120).replace(/\n/g, '\\n');
+          console.warn(
+            `[JSON parse failed] path=${req.path} method=${req.method} message=${e?.message || e} snippet=...${snippet}...`,
+          );
           next(e);
           return;
         }
@@ -55,6 +63,31 @@ async function bootstrap() {
       next();
     },
   );
+  // Flutter 등에서 bookingId만 보낼 때 booking_id로 복사 (ValidationPipe 전에 적용)
+  expressApp.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const path = (req.path || (req as any).url || '').split('?')[0];
+    if (req.body && typeof req.body === 'object' && path.endsWith('/xenditprocess')) {
+      const b = req.body as Record<string, unknown>;
+      if (b.bookingId != null && (b.booking_id === undefined || b.booking_id === '')) {
+        b.booking_id = b.bookingId;
+      }
+    }
+    next();
+  });
+  // POST /api/v1/instant-bookings: 앱에서 보내는 snake_case body를 camelCase로 정규화 (ValidationPipe whitelist/검증 전)
+  expressApp.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const path = (req.path || (req as any).url || '').split('?')[0];
+    if (req.method === 'POST' && path.includes('instant-bookings') && req.body && typeof req.body === 'object') {
+      const b = req.body as Record<string, unknown>;
+      req.body = {
+        userId: b.userId ?? b.user_id,
+        serviceCategoryId: b.serviceCategoryId ?? b.service_category,
+        timeSlot: b.timeSlot ?? b.time_slot,
+        location: b.location,
+      };
+    }
+    next();
+  });
   // application/json이 아닐 때만 기본 json 파서 사용 (json 요청은 위에서 이미 파싱됨)
   expressApp.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (req.get('content-type')?.includes('application/json')) {
@@ -128,10 +161,35 @@ async function bootstrap() {
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'access-token')
     .addTag('rewards', '리워드 크레딧: 잔액/거래내역, 구매 초기화·결제 요청(Xendit)')
     .addTag('payments', '결제: wallet, booking 초기화, Xendit 처리, 상태 조회')
+    .addTag('listings', 'Quick Order: 서비스 리스팅(service_listings) 조회/생성/수정/가용시간')
+    .addTag('instant-bookings', 'Quick Order: 즉시 예약 요청 생성·조회(instant_bookings)')
+    .addTag('booking-queue', 'Quick Order: Provider 대기열 수락(ack_item_list)')
+    .addTag('instant-invoices', 'Quick Order: Order Now 인보이스 생성·결제 플로우')
     .build();
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig, {
     operationIdFactory: (controllerKey: string, methodKey: string) => methodKey,
   });
+
+  // Swagger Basic Auth (optional: set SWAGGER_USER and SWAGGER_PASSWORD in .env)
+  const swaggerUser = configService.get<string>('SWAGGER_USER');
+  const swaggerPassword = configService.get<string>('SWAGGER_PASSWORD');
+  if (swaggerUser && swaggerPassword) {
+    expressApp.use('/api-docs', (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      const auth = req.headers.authorization;
+      if (!auth?.startsWith('Basic ')) {
+        res.setHeader('WWW-Authenticate', 'Basic realm="Swagger"');
+        return res.status(401).send('Authentication required');
+      }
+      const decoded = Buffer.from(auth.slice(6), 'base64').toString('utf8');
+      const [user, pass] = decoded.split(':', 2);
+      if (user !== swaggerUser || pass !== swaggerPassword) {
+        res.setHeader('WWW-Authenticate', 'Basic realm="Swagger"');
+        return res.status(401).send('Invalid credentials');
+      }
+      next();
+    });
+  }
+
   SwaggerModule.setup('api-docs', app, swaggerDocument, {
     swaggerOptions: {
       persistAuthorization: true,

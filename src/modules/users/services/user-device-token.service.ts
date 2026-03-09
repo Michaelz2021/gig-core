@@ -11,8 +11,9 @@ export class UserDeviceTokenService {
   ) {}
 
   /**
-   * 디바이스 토큰 등록 또는 업데이트
-   * 같은 fcmToken이 이미 있으면 업데이트, 없으면 새로 생성
+   * 디바이스 토큰 등록 또는 업데이트.
+   * (userId, appMode, platform) 조합당 최대 1행 유지: 이미 있으면 해당 행의 fcm_token만 갱신하고
+   * 같은 조합의 다른 행은 삭제. 없으면 새로 생성.
    */
   async registerDeviceToken(
     userId: string,
@@ -21,23 +22,42 @@ export class UserDeviceTokenService {
     platform: DevicePlatform,
     deviceId?: string,
   ): Promise<UserDeviceToken> {
-    // 같은 fcmToken이 이미 있는지 확인
-    const existing = await this.deviceTokenRepository.findOne({
-      where: { fcmToken },
+    const existingSameCombo = await this.deviceTokenRepository.findOne({
+      where: { userId, appMode, platform },
     });
 
-    if (existing) {
-      // 기존 토큰 업데이트 (userId, appMode, platform 등)
-      existing.userId = userId;
-      existing.appMode = appMode;
-      existing.platform = platform;
-      existing.deviceId = deviceId;
-      existing.isActive = true;
-      existing.lastUsedAt = new Date();
-      return this.deviceTokenRepository.save(existing);
+    if (existingSameCombo) {
+      existingSameCombo.fcmToken = fcmToken;
+      existingSameCombo.deviceId = deviceId;
+      existingSameCombo.isActive = true;
+      existingSameCombo.lastUsedAt = new Date();
+      const saved = await this.deviceTokenRepository.save(existingSameCombo);
+      // 같은 (userId, appMode, platform)인 다른 행만 삭제 (중복 제거, 현재 행은 유지)
+      await this.deviceTokenRepository
+        .createQueryBuilder()
+        .delete()
+        .where('user_id = :userId', { userId })
+        .andWhere('app_mode = :appMode', { appMode })
+        .andWhere('platform = :platform', { platform })
+        .andWhere('id != :id', { id: saved.id })
+        .execute();
+      return saved;
     }
 
-    // 새 토큰 생성
+    // 같은 fcmToken이 다른 사용자/조합으로 있으면 해당 행 업데이트
+    const existingByToken = await this.deviceTokenRepository.findOne({
+      where: { fcmToken },
+    });
+    if (existingByToken) {
+      existingByToken.userId = userId;
+      existingByToken.appMode = appMode;
+      existingByToken.platform = platform;
+      existingByToken.deviceId = deviceId;
+      existingByToken.isActive = true;
+      existingByToken.lastUsedAt = new Date();
+      return this.deviceTokenRepository.save(existingByToken);
+    }
+
     const deviceToken = this.deviceTokenRepository.create({
       userId,
       fcmToken,
@@ -47,7 +67,6 @@ export class UserDeviceTokenService {
       isActive: true,
       lastUsedAt: new Date(),
     });
-
     return this.deviceTokenRepository.save(deviceToken);
   }
 
@@ -73,9 +92,25 @@ export class UserDeviceTokenService {
     const tokens = await this.deviceTokenRepository.find({
       where,
       select: ['fcmToken'],
+      order: { lastUsedAt: 'DESC' },
     });
 
     return tokens.map((t) => t.fcmToken);
+  }
+
+  /**
+   * 같은 user_id에 토큰이 여러 개일 때 last_used_at 기준 최신 활성 토큰 1개 반환.
+   * @param appMode 없으면 모든 모드 중 최신 1개
+   */
+  async getLatestActiveToken(userId: string, appMode?: AppMode): Promise<string | null> {
+    const where: Record<string, unknown> = { userId, isActive: true };
+    if (appMode) where.appMode = appMode;
+    const row = await this.deviceTokenRepository.findOne({
+      where,
+      select: ['fcmToken'],
+      order: { lastUsedAt: 'DESC' },
+    });
+    return row?.fcmToken?.trim() ? row.fcmToken : null;
   }
 
   /**

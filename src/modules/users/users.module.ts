@@ -11,7 +11,9 @@ import { UserBankAccount } from './entities/user-bank-account.entity';
 import { TopTierProviderRanking } from './entities/top-tier-provider-ranking.entity';
 import { ProviderAd } from './entities/provider-ad.entity';
 import { UserDeviceToken } from './entities/user-device-token.entity';
+import { ProviderTrustScore } from './entities/provider-trust-score.entity';
 import { ProviderRankingService } from './services/provider-ranking.service';
+import { ProviderTrustScoreService } from './services/provider-trust-score.service';
 import { ProviderAdService } from './services/provider-ad.service';
 import { UserDeviceTokenService } from './services/user-device-token.service';
 import { TrustScore } from '../trust-score/entities/trust-score.entity';
@@ -29,6 +31,7 @@ import { ServiceCategory } from '../services/entities/service-category.entity';
       TopTierProviderRanking,
       ProviderAd,
       UserDeviceToken,
+      ProviderTrustScore,
       TrustScore,
       ServiceCategory,
     ]),
@@ -39,12 +42,14 @@ import { ServiceCategory } from '../services/entities/service-category.entity';
     ProviderRankingService,
     ProviderAdService,
     UserDeviceTokenService,
+    ProviderTrustScoreService,
   ],
   exports: [
     UsersService,
     ProviderRankingService,
     ProviderAdService,
     UserDeviceTokenService,
+    ProviderTrustScoreService,
   ],
 })
 export class UsersModule {}

@@ -18,7 +18,9 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "script:seed-contracts": "ts-node -r tsconfig-paths/register scripts/seed-contracts-from-bookings.ts"
+    "script:seed-contracts": "ts-node -r tsconfig-paths/register scripts/seed-contracts-from-bookings.ts",
+    "script:diagnose-instant-push": "ts-node -r tsconfig-paths/register scripts/diagnose-instant-booking-push.ts",
+    "script:migrate-service-category": "ts-node -r tsconfig-paths/register scripts/migrate-service-category-to-array.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.937.0",

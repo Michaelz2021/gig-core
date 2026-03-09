@@ -2,6 +2,7 @@ import { Injectable, HttpException, ConflictException, BadRequestException, Unau
 import { JwtService } from '@nestjs/jwt';
 import { Inject } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
+import { ProviderTrustScoreService } from '../users/services/provider-trust-score.service';
 import { RegisterDto, RegisterRole } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UserType, UserStatus } from '../users/entities/user.entity';
@@ -9,6 +10,7 @@ import { SmsService } from './sms.service';
 import { EmailService } from './email.service';
 import { PhoneValidator } from '../../common/utils/phone-validator';
 import { DataSource } from 'typeorm';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
@@ -17,6 +19,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly smsService: SmsService,
     private readonly emailService: EmailService,
+    private readonly providerTrustScoreService: ProviderTrustScoreService,
     @Inject('REDIS_CLIENT') private readonly redisClient: any,
     private readonly dataSource: DataSource,
   ) {}
@@ -405,6 +408,7 @@ export class AuthService {
         isEmailVerified: true,
       });
       await this.usersService.ensureProviderRowIfFullyVerified(user.id);
+      await this.providerTrustScoreService.recalculateByUserId(user.id).catch(() => {});
       if (this.redisClient) {
         try {
           const emailTokenKey = `email_verification:${email}`;
@@ -429,6 +433,124 @@ export class AuthService {
         },
       });
     }
+  }
+
+  /**
+   * Forgot password OTP: send OTP (email or phone) or verify OTP.
+   * Body: otpType ('email'|'phone'), email? (when otpType=email), phone? (when otpType=phone), otp? (when verifying).
+   */
+  async forgotOtp(dto: { otpType: 'email' | 'phone'; email?: string; phone?: string; otp?: string }) {
+    const otpType = dto.otpType?.toLowerCase() as 'email' | 'phone';
+    if (!otpType || !['email', 'phone'].includes(otpType)) {
+      throw new BadRequestException({ message: 'otpType must be email or phone', errors: { otpType: 'Invalid otpType' } });
+    }
+
+    // Verification mode: otp provided -> check Redis and return verified
+    if (dto.otp != null && String(dto.otp).trim().length === 6) {
+      if (!this.redisClient) {
+        throw new BadRequestException({ message: 'OTP verification unavailable', errors: { otp: 'Service temporarily unavailable' } });
+      }
+      const key = otpType === 'email'
+        ? `forgot_otp:email:${(dto.email || '').trim().toLowerCase()}`
+        : `forgot_otp:phone:${String(dto.phone || '').trim()}`;
+      let stored: string | null = null;
+      try {
+        stored = await this.redisClient.get(key);
+      } catch (e) {
+        throw new BadRequestException({ message: 'OTP verification unavailable', errors: { otp: 'Service temporarily unavailable' } });
+      }
+      if (!stored || stored !== dto.otp.trim()) {
+        throw new BadRequestException({ message: 'Invalid or expired OTP', errors: { otp: 'The OTP code is invalid or has expired.' } });
+      }
+      try {
+        await this.redisClient.del(key);
+        const approvedKey = otpType === 'email'
+          ? `forgot_otp:approved:email:${(dto.email || '').trim().toLowerCase()}`
+          : `forgot_otp:approved:phone:${String(dto.phone || '').trim()}`;
+        await this.redisClient.setEx(approvedKey, 600, '1');
+      } catch {}
+      return { success: true, verified: true, message: 'OTP verified. You can now update your password.' };
+    }
+
+    // Send mode
+    if (!this.redisClient) {
+      throw new BadRequestException({ message: 'OTP send service unavailable', errors: { otp: 'Service temporarily unavailable. Please try again later.' } });
+    }
+
+    if (otpType === 'email') {
+      const email = (dto.email || '').trim().toLowerCase();
+      if (!email) {
+        throw new BadRequestException({ message: 'Email is required when otpType is email', errors: { email: 'Email is required' } });
+      }
+      const user = await this.usersService.findByEmail(email);
+      if (!user) {
+        throw new BadRequestException({ message: 'No account found with this email', errors: { email: 'No account found. Please register first.' } });
+      }
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const key = `forgot_otp:email:${email}`;
+      await this.redisClient.setEx(key, 300, otp);
+      const result = await this.emailService.sendOtpEmail(email, otp);
+      if (!result.success) {
+        throw new BadRequestException({ message: 'Failed to send OTP email', errors: { email: result.error || 'Try again later.' } });
+      }
+      return { success: true, message: 'OTP sent to your email.', ...(process.env.NODE_ENV === 'development' ? { otp } : {}) };
+    }
+
+    // phone
+    const phone = String(dto.phone || '').trim();
+    if (!phone) {
+      throw new BadRequestException({ message: 'Phone is required when otpType is phone', errors: { phone: 'Phone is required' } });
+    }
+    if (!PhoneValidator.isValidPhilippineMobile(phone)) {
+      throw new BadRequestException({ message: 'Invalid Philippine mobile number', errors: { phone: 'Invalid phone format' } });
+    }
+    const user = await this.usersService.findByPhone(phone);
+    if (!user) {
+      throw new BadRequestException({ message: 'No account found with this phone number', errors: { phone: 'No account found. Please register first.' } });
+    }
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const key = `forgot_otp:phone:${phone}`;
+    await this.redisClient.setEx(key, 300, otp);
+    await this.smsService.sendOTP(phone, otp);
+    return { success: true, message: 'OTP sent to your phone.', ...(process.env.NODE_ENV === 'development' ? { otp } : {}) };
+  }
+
+  /**
+   * OTP 승인 후 비밀번호 변경. Redis forgot_otp:approved:{email|phone}:{id} 확인 후 사용자 비밀번호 업데이트.
+   */
+  async updatePassword(dto: { otpType: 'email' | 'phone'; email?: string; phone?: string; password: string }) {
+    if (!this.redisClient) {
+      throw new UnauthorizedException('Password update is temporarily unavailable.');
+    }
+    const otpType = (dto.otpType || '').toLowerCase() as 'email' | 'phone';
+    if (!['email', 'phone'].includes(otpType)) {
+      throw new BadRequestException('otpType must be email or phone');
+    }
+    const email = otpType === 'email' ? (dto.email || '').trim().toLowerCase() : undefined;
+    const phone = otpType === 'phone' ? String(dto.phone || '').trim() : undefined;
+    if (otpType === 'email' && !email) {
+      throw new BadRequestException('email is required when otpType is email');
+    }
+    if (otpType === 'phone' && !phone) {
+      throw new BadRequestException('phone is required when otpType is phone');
+    }
+    const approvedKey = otpType === 'email'
+      ? `forgot_otp:approved:email:${email}`
+      : `forgot_otp:approved:phone:${phone}`;
+    const approved = await this.redisClient.get(approvedKey);
+    if (!approved) {
+      throw new UnauthorizedException('Forgot OTP approval is missing or expired. Please verify OTP again.');
+    }
+    const user = otpType === 'email'
+      ? await this.usersService.findByEmail(email!)
+      : await this.usersService.findByPhone(phone!);
+    if (!user) {
+      throw new BadRequestException('User not found.');
+    }
+    const hashedPassword = await bcrypt.hash(dto.password, 12);
+    await this.usersService.update(user.id, { password: hashedPassword });
+    await this.redisClient.del(approvedKey).catch(() => {});
+    return { success: true, message: 'Password updated successfully.' };
   }
 
   async verifyOtp(phone: string, otp: string) {
@@ -474,6 +596,7 @@ export class AuthService {
       isPhoneVerified: true,
     });
     await this.usersService.ensureProviderRowIfFullyVerified(user.id);
+    await this.providerTrustScoreService.recalculateByUserId(user.id).catch(() => {});
     try {
       await this.redisClient.del(otpKey);
     } catch {
@@ -500,8 +623,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // 앱 컨텍스트(user-type) 검증: 요청한 앱을 이 사용자가 사용할 수 있는지 확인
-    const requestedContext = loginDto.userType?.toLowerCase();
+    // 앱 컨텍스트(user-type / login-type) 검증: 요청한 앱을 이 사용자가 사용할 수 있는지 확인
+    const requestedContext = (
+      loginDto.userType ??
+      loginDto['user-type'] ??
+      loginDto['login-type']
+    )?.toLowerCase();
     if (requestedContext) {
       const canUseConsumer = user.userType === UserType.CONSUMER || user.userType === UserType.BOTH;
       const canUseProvider = user.userType === UserType.PROVIDER || user.userType === UserType.BOTH;

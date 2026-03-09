@@ -99,13 +99,16 @@ export class XenditPaymentService {
       );
     }
 
-    // 4. Resolve booking_number and consumer (email, phone)
-    let bookingNumber: string = session.booking_id;
+    // 4. 앱에서 보낸 bookingId(= bookings.id)로 DB 조회 → 해당 행의 booking_number를 Xendit에 전달
+    const bookingIdFromRequest = dto.booking_id || session.booking_id;
+    let bookingNumber: string;
     try {
-      const booking = await this.bookingsService.findOne(session.booking_id);
-      bookingNumber = booking?.bookingNumber ?? session.booking_id;
+      const booking = await this.bookingsService.findOne(bookingIdFromRequest);
+      bookingNumber = booking.bookingNumber;
     } catch {
-      // booking 미존재 시 session.booking_id 그대로 사용 (UUID 등)
+      throw new BadRequestException(
+        `Booking not found for id ${bookingIdFromRequest}. Use the booking table id (UUID) as bookingId.`,
+      );
     }
     const consumer = await this.usersService.findOne(session.buyer_id);
     const consumerEmail = consumer?.email ?? '';

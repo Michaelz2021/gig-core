@@ -23,6 +23,11 @@ import { HealthModule } from './modules/health/health.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { RewardsModule } from './modules/rewards/rewards.module';
 import { NoticesModule } from './modules/notices/notices.module';
+import { ConsumerProviderModule } from './modules/consumer-provider/consumer-provider.module';
+import { ListingsModule } from './modules/listings/listings.module';
+import { InstantBookingsModule } from './modules/instant-bookings/instant-bookings.module';
+import { InstantInvoicesModule } from './modules/instant-invoices/instant-invoices.module';
+import { InstantServiceListModule } from './modules/instant-service-list/instant-service-list.module';
 import { RedisModule } from './config/redis.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
@@ -107,6 +112,12 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     AdminModule,
     RewardsModule,
     NoticesModule,
+    ConsumerProviderModule,
+    // Quick Order / Instant Booking (Order Now)
+    ListingsModule,
+    InstantBookingsModule,
+    InstantInvoicesModule,
+    InstantServiceListModule,
   ],
   providers: [
     {

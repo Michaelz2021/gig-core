@@ -127,6 +127,34 @@ export class EmailService {
   }
 
   /**
+   * OTP 코드를 이메일로 전송 (비밀번호 찾기 등)
+   */
+  async sendOtpEmail(to: string, otpCode: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    try {
+      if (!this.sendGridApiKey) {
+        this.logger.error('SENDGRID_API_KEY is not configured');
+        return { success: false, error: 'Email service not configured' };
+      }
+      const emailData = {
+        personalizations: [{ to: [{ email: to }], subject: 'Gig-Market OTP Verification Code' }],
+        from: { email: this.sendGridFromEmail, name: 'Gig-Market' },
+        content: [{
+          type: 'text/html',
+          value: `<p>Your OTP code is: <strong>${otpCode}</strong></p><p>Valid for 5 minutes. If you did not request this, please ignore.</p>`,
+        }],
+      };
+      await axios.post(this.sendGridApiUrl, emailData, {
+        headers: { Authorization: `Bearer ${this.sendGridApiKey}`, 'Content-Type': 'application/json' },
+      });
+      this.logger.log(`OTP email sent to ${to}`);
+      return { success: true };
+    } catch (error: any) {
+      this.logger.error('SendGrid OTP Email Error:', error?.response?.data || error?.message);
+      return { success: false, error: error?.message ?? String(error) };
+    }
+  }
+
+  /**
    * 시험용 이메일 전송 (관리자 대시보드 등에서 사용)
    * @param to 수신자 이메일
    * @returns 전송 결과

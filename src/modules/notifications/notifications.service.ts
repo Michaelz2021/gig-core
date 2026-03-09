@@ -6,6 +6,7 @@ import { UsersService } from '../users/users.service';
 import { UserDeviceTokenService } from '../users/services/user-device-token.service';
 import { AppMode } from '../users/entities/user-device-token.entity';
 import { FcmService } from './fcm.service';
+import { SmsService } from '../auth/sms.service';
 
 @Injectable()
 export class NotificationsService {
@@ -15,6 +16,7 @@ export class NotificationsService {
     private readonly usersService: UsersService,
     private readonly userDeviceTokenService: UserDeviceTokenService,
     private readonly fcmService: FcmService,
+    private readonly smsService: SmsService,
   ) {}
 
   /**
@@ -119,6 +121,21 @@ export class NotificationsService {
     } catch (error) {
       console.error('Failed to send push notification:', error);
       // 알림 저장은 성공했으므로 에러를 던지지 않음
+    }
+
+    // 4. SMS: is_phone_verified === true 일 때만 발송
+    try {
+      const phoneInfo = await this.usersService.getPhoneAndVerification(userId);
+      if (phoneInfo?.isPhoneVerified && phoneInfo.phone) {
+        const smsText = `${title}: ${message}`.slice(0, 160);
+        const smsResult = await this.smsService.sendMessage(phoneInfo.phone, smsText);
+        if (smsResult.success) {
+          savedNotification.sentViaSms = true;
+          await this.notificationRepository.save(savedNotification);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to send notification SMS:', e);
     }
 
     return savedNotification;

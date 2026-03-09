@@ -8,7 +8,8 @@ export class SmsService {
   private readonly logger = new Logger(SmsService.name);
   private readonly semaphoreApiKey: string;
   // OTP 전용 엔드포인트 사용
-  private readonly semaphoreApiUrl = 'https://api.semaphore.co/api/v4/otp';
+  private readonly semaphoreOtpUrl = 'https://api.semaphore.co/api/v4/otp';
+  private readonly semaphoreMessagesUrl = 'https://api.semaphore.co/api/v4/messages';
 
   constructor(private readonly configService: ConfigService) {
     this.semaphoreApiKey = this.configService.get<string>('SEMAPHORE_API_KEY') || '';
@@ -45,7 +46,7 @@ export class SmsService {
       }
 
       // OTP 전용 라우트: {otp} 플레이스홀더와 code 파라미터 사용
-      const response = await axios.post(this.semaphoreApiUrl, {
+      const response = await axios.post(this.semaphoreOtpUrl, {
         apikey: this.semaphoreApiKey,
         number: normalizedNumber,
         message: 'Your One Time Password is: {otp}. Please use it within 5 minutes.',
@@ -78,6 +79,38 @@ export class SmsService {
       }
 
       throw error;
+    }
+  }
+
+  /**
+   * Send a general SMS message (e.g. business notifications). Max 160 chars per segment.
+   */
+  async sendMessage(mobileNumber: string, message: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!PhoneValidator.isValidPhilippineMobile(mobileNumber)) {
+        return { success: false, error: 'Invalid Philippine mobile number format' };
+      }
+      const normalizedNumber = PhoneValidator.normalizeForSemaphore(mobileNumber);
+      if (!this.semaphoreApiKey) {
+        this.logger.error('SEMAPHORE_API_KEY is not configured');
+        return { success: false, error: 'SMS service not configured' };
+      }
+      const text = String(message).slice(0, 160);
+      await axios.post(this.semaphoreMessagesUrl, {
+        apikey: this.semaphoreApiKey,
+        number: normalizedNumber,
+        message: text,
+        sendername: 'GigMarket',
+      });
+      this.logger.log(`SMS sent to ${normalizedNumber}`);
+      return { success: true };
+    } catch (error: any) {
+      this.logger.error('Semaphore SMS sendMessage Error:', error?.response?.data || error?.message);
+      if (process.env.NODE_ENV === 'development') {
+        this.logger.warn(`[DEV MODE] Would send SMS to ${mobileNumber}: ${message?.slice(0, 50)}...`);
+        return { success: true };
+      }
+      return { success: false, error: error?.response?.data?.message || error?.message };
     }
   }
 }

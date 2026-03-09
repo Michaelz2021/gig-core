@@ -7,6 +7,7 @@ import { CreateSmartContractDto } from './dto/create-smart-contract.dto';
 import { SignContractDto } from './dto/sign-contract.dto';
 import { WorkProgressReportsResponseDto, WorkProgressReportResponseDto } from './dto/work-progress-report-response.dto';
 import { CreateWorkProgressReportDto } from './dto/create-work-progress-report.dto';
+import { ProjectOrderStatsDto } from './dto/project-order-stats.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import { BookingStatus } from './entities/booking.entity';
@@ -36,6 +37,17 @@ export class BookingsController {
     @Query('status') status?: BookingStatus
   ) {
     return this.bookingsService.findAll(user.id, role || 'consumer', status);
+  }
+
+  @Get('stats')
+  @ApiOperation({
+    summary: 'Get project/order stats for app dashboard',
+    description: 'Returns inProgress, pending, totalBids, completed, posted, purchased, active, spent. Use role=consumer|provider to scope; omit for combined.',
+  })
+  @ApiQuery({ name: 'role', required: false, enum: ['consumer', 'provider'] })
+  @ApiOkResponse({ description: 'Project order stats', type: ProjectOrderStatsDto })
+  getProjectOrderStats(@GetUser() user: any, @Query('role') role?: 'consumer' | 'provider') {
+    return this.bookingsService.getProjectOrderStats(user.id, role);
   }
 
   // Reports endpoints - must be defined BEFORE :bookingId route to ensure proper matching

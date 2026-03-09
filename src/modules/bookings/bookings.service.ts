@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Booking, BookingStatus } from './entities/booking.entity';
 import { Contract } from './entities/contract.entity';
@@ -9,8 +9,11 @@ import { WorkProgressReport, ReportType } from './entities/work-progress-report.
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateSmartContractDto } from './dto/create-smart-contract.dto';
 import { CreateWorkProgressReportDto } from './dto/create-work-progress-report.dto';
+import { ProjectOrderStatsDto } from './dto/project-order-stats.dto';
 import { ServicesService } from '../services/services.service';
 import { UsersService } from '../users/users.service';
+import { Quote } from '../quotes/entities/quote.entity';
+import { Auction } from '../matching/entities/auction.entity';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -24,6 +27,10 @@ export class BookingsService {
     private readonly smartContractRepository: Repository<SmartContract>,
     @InjectRepository(WorkProgressReport)
     private readonly workProgressReportRepository: Repository<WorkProgressReport>,
+    @InjectRepository(Quote)
+    private readonly quoteRepository: Repository<Quote>,
+    @InjectRepository(Auction)
+    private readonly auctionRepository: Repository<Auction>,
     private readonly servicesService: ServicesService,
     private readonly usersService: UsersService,
     private readonly configService: ConfigService,
@@ -190,6 +197,108 @@ export class BookingsService {
     const [items, total] = await queryBuilder.getManyAndCount();
 
     return { items, total };
+  }
+
+  private static readonly PENDING_STATUSES: BookingStatus[] = [
+    BookingStatus.PENDING_PAYMENT,
+    BookingStatus.PENDING_ACCEPTANCE,
+    BookingStatus.AWAITING_CONFIRMATION,
+    BookingStatus.CONFIRMED,
+    BookingStatus.AWAITING_PROVIDER_SIGN,
+  ];
+
+  /**
+   * Project/order execution stats for app dashboard.
+   * role=provider → provider stats (posted/purchased/spent=0, totalBids=quotes count).
+   * role=consumer → consumer stats (totalBids=0, posted=auctions, purchased/spent).
+   * role omitted → combined.
+   */
+  async getProjectOrderStats(userId: string, role?: 'consumer' | 'provider'): Promise<ProjectOrderStatsDto> {
+    const provider = await this.usersService.getProviderByUserId(userId);
+    const providerId = provider?.id ?? null;
+
+    const asConsumer = role !== 'provider';
+    const asProvider = role !== 'consumer';
+
+    const [
+      consumerInProgress,
+      consumerPending,
+      consumerCompleted,
+      consumerSpent,
+      providerInProgress,
+      providerPending,
+      providerCompleted,
+      totalBids,
+      posted,
+    ] = await Promise.all([
+      asConsumer
+        ? this.bookingRepository.count({
+            where: { consumerId: userId, status: BookingStatus.IN_PROGRESS },
+          })
+        : 0,
+      asConsumer
+        ? this.bookingRepository.count({
+            where: { consumerId: userId, status: In(BookingsService.PENDING_STATUSES) },
+          })
+        : 0,
+      asConsumer
+        ? this.bookingRepository.count({
+            where: { consumerId: userId, status: BookingStatus.COMPLETED },
+          })
+        : 0,
+      asConsumer
+        ? this.bookingRepository
+            .createQueryBuilder('b')
+            .select('COALESCE(SUM(CAST(b.total_amount AS NUMERIC)), 0)', 'sum')
+            .where('b.consumer_id = :userId', { userId })
+            .andWhere('b.status = :status', { status: BookingStatus.COMPLETED })
+            .getRawOne()
+            .then((r) => Number(r?.sum ?? 0))
+        : 0,
+      asProvider && providerId
+        ? this.bookingRepository
+            .createQueryBuilder('b')
+            .innerJoin('b.provider', 'p')
+            .where('p.user_id = :userId', { userId })
+            .andWhere('b.status = :status', { status: BookingStatus.IN_PROGRESS })
+            .getCount()
+        : 0,
+      asProvider && providerId
+        ? this.bookingRepository
+            .createQueryBuilder('b')
+            .innerJoin('b.provider', 'p')
+            .where('p.user_id = :userId', { userId })
+            .andWhere('b.status IN (:...statuses)', { statuses: BookingsService.PENDING_STATUSES })
+            .getCount()
+        : 0,
+      asProvider && providerId
+        ? this.bookingRepository
+            .createQueryBuilder('b')
+            .innerJoin('b.provider', 'p')
+            .where('p.user_id = :userId', { userId })
+            .andWhere('b.status = :status', { status: BookingStatus.COMPLETED })
+            .getCount()
+        : 0,
+      asProvider && providerId ? this.quoteRepository.count({ where: { providerId } }) : 0,
+      asConsumer
+        ? this.auctionRepository.count({ where: { consumerId: userId } })
+        : 0,
+    ]);
+
+    const inProgress = (asConsumer ? consumerInProgress : 0) + (asProvider ? providerInProgress : 0);
+    const pending = (asConsumer ? consumerPending : 0) + (asProvider ? providerPending : 0);
+    const completed = (asConsumer ? consumerCompleted : 0) + (asProvider ? providerCompleted : 0);
+
+    return {
+      inProgress,
+      pending,
+      totalBids: totalBids ?? 0,
+      completed,
+      posted: posted ?? 0,
+      purchased: consumerCompleted,
+      active: inProgress,
+      spent: Number(Number(consumerSpent).toFixed(2)),
+    };
   }
 
   async findOne(id: string): Promise<Booking> {

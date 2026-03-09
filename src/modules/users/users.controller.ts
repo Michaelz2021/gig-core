@@ -346,6 +346,13 @@ export class UsersController {
     return this.usersService.findOneProvider(providerId);
   }
 
+  @Get(':id/profile')
+  @ApiOperation({ summary: 'Get user profile by ID (alias for GET /users/:id)' })
+  @ApiResponse({ status: 200, description: 'Profile retrieved successfully', type: User })
+  async getProfileById(@Param('id') userId: string) {
+    return this.usersService.findOne(userId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get public profile' })
   @ApiResponse({ status: 200, description: 'Profile retrieved successfully', type: User })

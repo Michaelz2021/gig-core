@@ -1,9 +1,9 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
-import { User } from './entities/user.entity';
+import { User, UserType } from './entities/user.entity';
 import { ProviderFavorite } from './entities/provider-favorite.entity';
-import { Provider } from './entities/provider.entity';
+import { Provider, BusinessType } from './entities/provider.entity';
 import { UserProfile } from './entities/user-profile.entity';
 import { UserBankAccount } from './entities/user-bank-account.entity';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
@@ -55,7 +55,7 @@ export class UsersService {
         'id', 'email', 'phone', 'password', 'firstName', 'lastName',
         'userType', 'profileImage', 'dateOfBirth', 'gender',
         'kycLevel', 'isEmailVerified', 'isPhoneVerified', 'isIdVerified',
-        'twoFactorEnabled', 'status', 'lastLoginAt', 'deviceTokens',
+        'twoFactorEnabled', 'status', 'lastLoginAt',
         'serviceCategoryIds', 'createdAt', 'updatedAt', 'deletedAt'
       ]
     });
@@ -98,7 +98,7 @@ export class UsersService {
       throw new ConflictException('Phone number already exists');
     }
     // Extract fields that don't belong to User entity (these go to UserProfile)
-    const { bio, address, city, province, zipCode, trustScore, kycStatus, kycDocuments, deviceTokens, walletBalance, totalBookings, completedBookings, averageRating, totalReviews, isActive, ...userDataToSave } = userData;
+    const { bio, address, city, province, zipCode, trustScore, kycStatus, kycDocuments, walletBalance, totalBookings, completedBookings, averageRating, totalReviews, isActive, ...userDataToSave } = userData;
     const user = this.userRepository.create(userDataToSave);
     const savedUser = await this.userRepository.save(user);
     return Array.isArray(savedUser) ? savedUser[0] : savedUser;
@@ -178,32 +178,6 @@ export class UsersService {
     return this.findOne(id);
   }
 
-  async registerDeviceToken(userId: string, deviceToken: string): Promise<User> {
-    const user = await this.findOne(userId);
-    if (!user.deviceTokens) {
-      user.deviceTokens = [];
-    }
-    if (!user.deviceTokens.includes(deviceToken)) {
-      user.deviceTokens.push(deviceToken);
-      await this.userRepository.save(user);
-    }
-    return user;
-  }
-
-  async removeDeviceToken(userId: string, deviceToken: string): Promise<User> {
-    const user = await this.findOne(userId);
-    if (user.deviceTokens && user.deviceTokens.length > 0) {
-      user.deviceTokens = user.deviceTokens.filter(token => token !== deviceToken);
-      await this.userRepository.save(user);
-    }
-    return user;
-  }
-
-  async getDeviceTokens(userId: string): Promise<string[]> {
-    const user = await this.findOne(userId);
-    return user.deviceTokens || [];
-  }
-
   async updateTrustScore(id: string, score: number): Promise<User> {
     const user = await this.findOne(id);
     (user as any).trustScore = score;
@@ -220,6 +194,65 @@ export class UsersService {
     const user = await this.findOne(id);
     (user as any).isActive = false;
     await this.userRepository.save(user);
+  }
+
+  /**
+   * Get users.id by providers.id (for notifications that use provider_id).
+   */
+  async getUserIdByProviderId(providerId: string): Promise<string | null> {
+    const provider = await this.providerRepository.findOne({
+      where: { id: providerId },
+      select: ['userId'],
+    });
+    return provider?.userId ?? null;
+  }
+
+  /**
+   * Get provider IDs (providers.id) for given user IDs. Returns map userId -> providerId.
+   */
+  async getProviderIdsByUserIds(userIds: string[]): Promise<Record<string, string>> {
+    if (userIds.length === 0) return {};
+    const providers = await this.providerRepository.find({
+      where: userIds.map((userId) => ({ userId })),
+      select: ['id', 'userId'],
+    });
+    const map: Record<string, string> = {};
+    for (const p of providers) {
+      map[p.userId] = p.id;
+    }
+    return map;
+  }
+
+  /**
+   * Get phone and isPhoneVerified for a user (e.g. for SMS sending).
+   */
+  async getPhoneAndVerification(userId: string): Promise<{ phone: string; isPhoneVerified: boolean } | null> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['phone', 'isPhoneVerified'],
+    });
+    if (!user?.phone || String(user.phone).trim() === '') return null;
+    return {
+      phone: user.phone.trim(),
+      isPhoneVerified: user.isPhoneVerified === true,
+    };
+  }
+
+  /**
+   * If the user is fully verified (email + phone) and is provider/both, ensure a providers row exists.
+   */
+  async ensureProviderRowIfFullyVerified(userId: string): Promise<void> {
+    const user = await this.findOne(userId);
+    if (!user.isEmailVerified || !user.isPhoneVerified) return;
+    if (user.userType !== UserType.PROVIDER && user.userType !== UserType.BOTH) return;
+    let provider = await this.providerRepository.findOne({ where: { userId } });
+    if (!provider) {
+      provider = this.providerRepository.create({
+        userId,
+        businessType: BusinessType.INDIVIDUAL,
+      });
+      await this.providerRepository.save(provider);
+    }
   }
 
   async addFavorite(userId: string, providerId: string, notes?: string): Promise<ProviderFavorite> {
@@ -304,15 +337,18 @@ export class UsersService {
         if (minTrustScore !== undefined && ((user as any).trustScore || 0) < minTrustScore) {
           return false;
         }
+        if (category) {
+          const ids = (user as any).serviceCategoryIds ?? (user as any).service_category_ids ?? [];
+          const arr = Array.isArray(ids) ? ids : [];
+          if (!arr.includes(category)) return false;
+        }
         return true;
       });
-    const totalCount = filteredProviders.length;
-    filteredProviders = filteredProviders.slice(skip, skip + limit);
     if (location && filteredProviders.length > 0) {
-      const userIds = filteredProviders.map(p => p.userId).filter(Boolean);
-      if (userIds.length > 0) {
+      const locUserIds = filteredProviders.map(p => p.userId).filter(Boolean);
+      if (locUserIds.length > 0) {
         const allProfiles = await this.userProfileRepository.find({ take: 10000 });
-        const profiles = allProfiles.filter(p => userIds.includes(p.userId));
+        const profiles = allProfiles.filter(p => locUserIds.includes(p.userId));
         const profileMap = new Map(profiles.map(p => [p.userId, p]));
         const locationLower = location.toLowerCase();
         filteredProviders = filteredProviders.filter((provider) => {
@@ -324,6 +360,8 @@ export class UsersService {
         });
       }
     }
+    const totalCount = filteredProviders.length;
+    filteredProviders = filteredProviders.slice(skip, skip + limit);
     if (sortBy === 'newest' || sortBy === 'createdAt') {
       filteredProviders.sort((a, b) => {
         const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -347,6 +385,7 @@ export class UsersService {
       const user = (provider as any).user;
       return {
         providerId: provider.id,
+        userId: provider.userId,
         firstName: user?.firstName || '',
         lastName: user?.lastName || '',
         title: provider.businessName || `${user?.firstName || ''} ${user?.lastName || ''}`.trim(),
@@ -370,9 +409,10 @@ export class UsersService {
       providers: providersWithStats,
       pagination: {
         currentPage: page,
-        totalPages: Math.ceil(filteredProviders.length / limit),
-        totalItems: filteredProviders.length,
-        hasNext: page < Math.ceil(filteredProviders.length / limit),
+        totalPages: Math.ceil(totalCount / limit),
+        totalItems: totalCount,
+        itemsPerPage: limit,
+        hasNext: page < Math.ceil(totalCount / limit),
         hasPrev: page > 1,
       },
     };

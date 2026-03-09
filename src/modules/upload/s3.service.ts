@@ -99,6 +99,29 @@ export class S3Service {
   }
 
   /**
+   * Get a presigned PUT URL for client-side upload. Returns uploadUrl (for PUT) and publicUrl (after upload).
+   */
+  async getPresignedPutUrl(key: string, contentType: string, expiresIn: number = 3600): Promise<{ uploadUrl: string; publicUrl: string }> {
+    if (!this.bucketName) {
+      throw new Error('S3 bucket is not configured');
+    }
+    try {
+      const command = new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        ContentType: contentType,
+        ACL: 'public-read', // 업로드된 파일을 url로 직접 조회 가능하게
+      });
+      const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
+      const publicUrl = `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${key}`;
+      return { uploadUrl, publicUrl };
+    } catch (error) {
+      this.logger.error(`Failed to get presigned PUT URL: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
    * Get a signed URL for a file (temporary access)
    */
   async getSignedUrl(filePath: string, expiresIn: number = 3600): Promise<string> {

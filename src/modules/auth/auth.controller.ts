@@ -8,6 +8,8 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { LogoutDto } from './dto/logout.dto';
 import { SendTestOtpDto } from './dto/send-test-otp.dto';
+import { ForgotOtpDto } from './dto/forgot-otp.dto';
+import { UpdatePasswordDto } from './dto/update-password.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
@@ -107,11 +109,53 @@ export class AuthController {
   }
 
   @Public()
+  @Post('forgot-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Forgot password OTP',
+    description: 'Send OTP to email or phone for password reset, or verify OTP (when otp field is provided). Body: otpType (email|phone), email or phone, and optionally otp for verification.',
+  })
+  @ApiBody({ type: ForgotOtpDto })
+  @ApiResponse({ status: 200, description: 'OTP sent or verified' })
+  @ApiResponse({ status: 400, description: 'Invalid request or OTP' })
+  async forgotOtp(@Body() dto: ForgotOtpDto) {
+    return this.authService.forgotOtp(dto);
+  }
+
+  @Public()
+  @Post('update-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Update password after forgot OTP approval',
+    description:
+      'JWT 없이 호출. 먼저 POST /auth/forgot-otp 에서 otp 를 포함해 OTP 검증 성공 후, 같은 식별자(email/phone)로 새 비밀번호를 보내면 비밀번호가 변경됩니다. Body: otp-type (email|phone), email 또는 phone, password.',
+  })
+  @ApiBody({
+    type: UpdatePasswordDto,
+    examples: {
+      byEmail: {
+        summary: '이메일 계정 비밀번호 변경',
+        value: { 'otp-type': 'email', email: 'test@example.com', password: 'NewPassword123!' },
+      },
+      byPhone: {
+        summary: '휴대폰 계정 비밀번호 변경',
+        value: { 'otp-type': 'phone', phone: '+639123456789', password: 'NewPassword123!' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Password updated successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid input or user not found' })
+  @ApiResponse({ status: 401, description: 'Forgot OTP approval is missing or expired' })
+  async updatePassword(@Body() dto: UpdatePasswordDto) {
+    return this.authService.updatePassword(dto);
+  }
+
+  @Public()
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'OTP verification',
-    description: '전화번호와 OTP 코드로 검증 후, 해당 사용자의 is_phone_verified 를 true 로 업데이트합니다.',
+    description: 'Verify phone OTP and set is_phone_verified to true for the user.',
   })
   @ApiResponse({ status: 200, description: 'OTP verification successful' })
   @ApiResponse({ status: 400, description: 'Invalid or expired OTP' })
