@@ -223,12 +223,16 @@ export class UsersController {
   }
 
   @Get('providers/ads/:id')
-  @ApiOperation({ summary: 'Get provider ad by ID' })
-  @ApiParam({ name: 'id', description: 'Provider ad UUID' })
-  @ApiResponse({ status: 200, description: 'Provider ad retrieved successfully', type: ProviderAdResponseDto })
+  @ApiOperation({
+    summary: 'Get provider ad by ID or list by provider ID',
+    description:
+      'ID가 광고 UUID이면 해당 광고 1건 반환. 해당 광고가 없으면 ID를 provider ID로 해석해 해당 프로바이더의 광고 목록을 반환.',
+  })
+  @ApiParam({ name: 'id', description: 'Provider ad UUID or provider (user) UUID' })
+  @ApiResponse({ status: 200, description: 'Single ad or list of ads', type: ProviderAdResponseDto })
   @ApiResponse({ status: 404, description: 'Provider ad not found' })
   async getProviderAdById(@Param('id') id: string) {
-    return this.providerAdService.findOne(id);
+    return this.providerAdService.findOneOrListByProviderId(id);
   }
 
   @Post('providers/ads')
@@ -344,6 +348,38 @@ export class UsersController {
   })
   async getProviderTableProfile(@Param('id') providerId: string) {
     return this.usersService.findOneProvider(providerId);
+  }
+
+  @Get('bank-accounts')
+  @ApiOperation({ summary: 'Get my bank accounts' })
+  @ApiResponse({ status: 200, description: 'Bank accounts list' })
+  async getBankAccounts(@GetUser() user: any) {
+    return this.usersService.getBankAccounts(user.id);
+  }
+
+  @Post('bank-accounts')
+  @ApiOperation({ summary: 'Register bank account' })
+  @ApiBody({ type: CreateBankAccountDto })
+  @ApiResponse({ status: 201, description: 'Bank account created' })
+  async createBankAccount(@GetUser() user: any, @Body() dto: CreateBankAccountDto) {
+    return this.usersService.createBankAccount(user.id, dto);
+  }
+
+  @Get('bank-accounts/:accountId')
+  @ApiOperation({ summary: 'Get one bank account' })
+  @ApiParam({ name: 'accountId', description: 'Bank account UUID' })
+  @ApiResponse({ status: 200, description: 'Bank account' })
+  async getBankAccount(@GetUser() user: any, @Param('accountId') accountId: string) {
+    return this.usersService.getBankAccount(user.id, accountId);
+  }
+
+  @Delete('bank-accounts/:accountId')
+  @ApiOperation({ summary: 'Delete bank account' })
+  @ApiParam({ name: 'accountId', description: 'Bank account UUID' })
+  @ApiResponse({ status: 200, description: 'Bank account deleted' })
+  async deleteBankAccount(@GetUser() user: any, @Param('accountId') accountId: string) {
+    await this.usersService.deleteBankAccount(user.id, accountId);
+    return { message: 'Bank account deleted' };
   }
 
   @Get(':id/profile')

@@ -21,6 +21,7 @@ import { BookingsModule } from '../bookings/bookings.module';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { RewardsModule } from '../rewards/rewards.module';
+import { InstantInvoicesModule } from '../instant-invoices/instant-invoices.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { RewardsModule } from '../rewards/rewards.module';
     UsersModule,
     NotificationsModule,
     RewardsModule,
+    InstantInvoicesModule,
   ],
   controllers: [
     PaymentsController,

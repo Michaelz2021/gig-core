@@ -37,6 +37,12 @@ export class FcmService implements OnModuleInit {
       formattedPrivateKey = formattedPrivateKey.replace(/\\n/g, '\n');
       formattedPrivateKey = formattedPrivateKey.replace(/\\\r?\n/g, '\n');
 
+      if (formattedPrivateKey.length < 500) {
+        this.logger.warn(
+          `FIREBASE_PRIVATE_KEY may be truncated (length=${formattedPrivateKey.length}). Expected ~1700 chars. Use a single line with \\n for newlines in .env`,
+        );
+      }
+
       if (admin.apps.length === 0) {
         this.firebaseApp = admin.initializeApp({
           credential: admin.credential.cert({
@@ -45,7 +51,7 @@ export class FcmService implements OnModuleInit {
             clientEmail,
           }),
         });
-        this.logger.log('Firebase Admin SDK initialized successfully');
+        this.logger.log(`Firebase Admin SDK initialized successfully (projectId=${projectId})`);
       } else {
         this.firebaseApp = admin.app();
         this.logger.log('Using existing Firebase app instance');
@@ -70,7 +76,9 @@ export class FcmService implements OnModuleInit {
     errors: any[];
   }> {
     if (!this.firebaseApp) {
-      this.logger.warn('Firebase not initialized. Skipping push notification.');
+      this.logger.warn(
+        'Firebase not initialized (FIREBASE_PROJECT_ID/PRIVATE_KEY/CLIENT_EMAIL 확인). Skipping push notification.',
+      );
       return { success: 0, failure: deviceTokens.length, errors: [] };
     }
 
@@ -116,21 +124,31 @@ export class FcmService implements OnModuleInit {
         },
       };
 
-      const response = await admin.messaging().sendEachForMulticast(message);
+      const messaging = this.firebaseApp ? admin.messaging(this.firebaseApp) : admin.messaging();
+      const response = await messaging.sendEachForMulticast(message);
       const successCount = response.successCount;
       const failureCount = response.failureCount;
       const errors: any[] = [];
 
-      if (response.responses) {
+      if (response.responses && response.responses.length > 0) {
         response.responses.forEach((resp, idx) => {
           if (!resp.success) {
+            const err = resp.error as { code?: string; message?: string } | undefined;
+            const errCode = err?.code ?? (resp as any).error?.code ?? 'unknown';
+            const errMsg = err?.message ?? (resp as any).error?.message ?? JSON.stringify(resp.error);
             errors.push({
               token: validTokens[idx],
               error: resp.error,
             });
+            this.logger.warn(
+              `FCM send failed [${errCode}] token_prefix=${validTokens[idx]?.slice(0, 24)}... message=${errMsg}`,
+            );
+            if (failureCount > 0 && resp.error) {
+              this.logger.warn(`FCM raw error for token ${idx}: ${JSON.stringify(resp.error)}`);
+            }
             if (
-              resp.error?.code === 'messaging/invalid-registration-token' ||
-              resp.error?.code === 'messaging/registration-token-not-registered'
+              errCode === 'messaging/invalid-registration-token' ||
+              errCode === 'messaging/registration-token-not-registered'
             ) {
               this.logger.warn(`Invalid or unregistered token: ${validTokens[idx]}`);
             }
@@ -145,11 +163,15 @@ export class FcmService implements OnModuleInit {
         errors,
       };
     } catch (error: any) {
-      this.logger.error('Error sending push notification:', error);
+      const errMsg = error?.message ?? String(error);
+      const errCode = error?.code ?? (error?.errorInfo?.code);
+      this.logger.error(
+        `FCM send exception: message=${errMsg} code=${errCode ?? 'n/a'} full=${JSON.stringify(error?.errorInfo ?? error?.message ?? error)}`,
+      );
       return {
         success: 0,
         failure: validTokens.length,
-        errors: [{ error: error.message }],
+        errors: [{ error: errMsg, code: errCode }],
       };
     }
   }

@@ -32,20 +32,19 @@ export class InstantInvoicesService {
       throw new ForbiddenException('consumer_id must match the authenticated user');
     }
 
-    let providerId = dto.provider_id;
-    if (providerId == null || providerId === '') {
-      const listing = await this.listingsService.findOne(dto.listing_id);
-      const resolved = listing?.providerId;
-      if (resolved == null || resolved === '') {
-        throw new BadRequestException('provider_id is required or listing must have a provider');
-      }
-      providerId = typeof resolved === 'string' ? resolved : String(resolved);
+    const providerId =
+      dto.provider_id ??
+      (await this.listingsService.findOne(dto.listing_id).then((l) => l?.providerId ?? null)) ??
+      '';
+    if (!providerId) {
+      throw new BadRequestException('provider_id is required or listing must have a provider');
     }
 
+    // 앱의 provider_id = providers.id (UUID) 그대로 매핑
     const entity = this.instantInvoiceRepository.create({
       listingId: dto.listing_id,
       consumerId,
-      providerId,
+      providerId: String(providerId),
       instantBookingId: dto.instant_booking_id,
       serviceDate: dto.service_date,
       serviceTime: dto.service_time,
@@ -89,7 +88,7 @@ export class InstantInvoicesService {
   }
 
   /**
-   * JWT user_id 기준: consumer_id = user_id 이거나, provider_id가 해당 user의 provider id인 인보이스만 조회.
+   * JWT user_id 기준: consumer_id = user_id 이거나, provider_id가 해당 user의 providers.id인 인보이스만 조회.
    * 최신순 정렬.
    */
   async findAllByUserId(userId: string): Promise<InstantInvoice[]> {

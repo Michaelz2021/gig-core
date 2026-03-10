@@ -106,6 +106,25 @@ export class ProviderAdService {
   }
 
   /**
+   * ID로 단일 광고 조회, 없으면 providerId로 해석해 해당 프로바이더 광고 목록 반환.
+   * 앱이 GET .../providers/ads/{providerId} 로 호출하는 경우 404 대신 목록을 반환하기 위함.
+   */
+  async findOneOrListByProviderId(id: string): Promise<ProviderAd | { items: ProviderAd[]; totalCount: number }> {
+    const ad = await this.providerAdRepository.findOne({
+      where: { id },
+      relations: ['provider'],
+    });
+    if (ad) return ad;
+
+    const byProvider = await this.findByProviderId(id);
+    if (byProvider.length > 0) {
+      return { items: byProvider, totalCount: byProvider.length };
+    }
+
+    throw new NotFoundException(`ProviderAd with ID ${id} not found`);
+  }
+
+  /**
    * Provider ID로 ProviderAd 목록 조회
    */
   async findByProviderId(providerId: string): Promise<ProviderAd[]> {

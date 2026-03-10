@@ -9,11 +9,12 @@ import { PaymentSession } from './entities/payment-session.entity';
 import { EscrowAccount } from './entities/escrow-account.entity';
 import { Payout } from './entities/payout.entity';
 import { ProcessPaymentDto } from './dto/process-payment.dto';
-import { WalletTopupDto } from './dto/wallet-topup.dto';
+import { WalletTopupDto, TopupPaymentMethod } from './dto/wallet-topup.dto';
 import { XenditProcessDto } from './dto/xendit-process.dto';
 import { BookingsService } from '../bookings/bookings.service';
 import { UsersService } from '../users/users.service';
 import { XenditPaymentService } from './services/xendit-payment.service';
+import { XenditApiClient } from './services/xendit-api.client';
 
 /** Initialize payment session 타임아웃(ms). DB/외부 지연 시 무한 로딩 방지 */
 const INITIALIZE_SESSION_TIMEOUT_MS = 15_000;
@@ -40,6 +41,7 @@ export class PaymentsService {
     private readonly bookingsService: BookingsService,
     private readonly usersService: UsersService,
     private readonly xenditPaymentService: XenditPaymentService,
+    private readonly xenditApiClient: XenditApiClient,
   ) {}
 
   private async createWalletTransaction(input: {
@@ -160,30 +162,35 @@ export class PaymentsService {
   /**
    * Initialize a payment session for a contract.
    * 1. Validate contract 2. Reuse existing PENDING/PROCESSING session or 3. Create new session.
+   * @param allowedConsumerIdOverride 개발 환경에서만: 헤더 X-Consumer-Id가 계약 consumer와 일치하면 해당 사용자로 간주
    */
-  async initializePaymentSession(contractId: string, userId: string) {
+  async initializePaymentSession(
+    contractId: string,
+    userId: string,
+    allowedConsumerIdOverride?: string,
+  ) {
     // 1. Validate contract
-    const contract = await this.validateContract(contractId, userId);
+    const contract = await this.validateContract(contractId, userId, allowedConsumerIdOverride);
 
     // 2. Check for existing session
     const existing = await this.paymentSessionRepository.findOne({
+
       where: {
         contract_id: contractId,
         status: In(['PENDING', 'PROCESSING']),
       },
     });
-
-    if (existing) {
+    if (existing && existing.expires_at > new Date()) {
       return this.formatSessionResponse(existing);
     }
 
-    // 3. Create new session
+    // 3. Create new session (buyer = contract consumer)
     const sessionId = `PSESS-${Date.now()}`;
     const session = this.paymentSessionRepository.create({
       session_id: sessionId,
       contract_id: contractId,
       booking_id: contract.booking_id,
-      buyer_id: userId,
+      buyer_id: contract.consumer_id,
       total_amount: contract.total_amount,
       service_amount: contract.agreed_price,
       platform_fee: contract.platform_fee,
@@ -197,11 +204,69 @@ export class PaymentsService {
   }
 
   /**
+   * [Dev/Test] 예약 번호로 consumer_id 조회. 프로덕션에서는 404.
+   */
+  async getBookingConsumerId(bookingNumber: string): Promise<{ consumerId: string; bookingNumber: string }> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new NotFoundException('Not available in production');
+    }
+    const booking = await this.bookingsService.findOneByBookingNumber(bookingNumber);
+    return { consumerId: booking.consumerId, bookingNumber: booking.bookingNumber };
+  }
+
+  /**
+   * [Dev/Test] e2e 테스트와 동일한 payload로 Xendit v3 직접 호출.
+   * payment_session 없이 Swagger에서 Xendit 연동만 시험할 때 사용.
+   * 프로덕션에서는 404.
+   */
+  async testXenditRequest(): Promise<any> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new NotFoundException('Not available in production');
+    }
+    const payload = {
+      reference_id: `order_${Date.now()}_3ds`,
+      type: 'PAY' as const,
+      country: 'ID', // Why Indonesia?
+      currency: 'IDR', // Cross Border Payment?
+      request_amount: 100000,
+      capture_method: 'AUTOMATIC' as const,
+      channel_code: 'CARDS',
+      channel_properties: {
+        mid_label: 'CTV_TEST',
+        card_details: {
+          cvn: '123',
+          card_number: '4000000000001091',
+          expiry_year: '2025',
+          expiry_month: '12',
+          cardholder_first_name: 'John',
+          cardholder_last_name: 'Doe',
+          cardholder_email: 'john.doe@example.com',
+          cardholder_phone_number: '+628123456789',
+        },
+        skip_three_ds: false,
+        failure_return_url: 'https://xendit.co/failure',
+        success_return_url: 'https://xendit.co/success',
+      },
+      description: 'Payment for Order #123456',
+      metadata: {
+        order_id: '123456',
+        customer_type: 'premium',
+      },
+    };
+    return this.xenditApiClient.createPaymentRequest(payload);
+  }
+
+  /**
    * Initialize a payment session by booking_number (계약서 없이 예약만 있는 경우).
    * booking_number로 booking 테이블 조회 후 동일한 출력 형식으로 반환.
    * 타임아웃 적용으로 DB/외부 지연 시 무한 로딩 방지.
+   * @param allowedConsumerIdOverride 개발 환경에서만: 헤더 X-Consumer-Id가 예약의 consumer와 일치하면 해당 사용자로 간주
    */
-  async initializePaymentSessionByBookingNumber(bookingNumber: string, userId: string) {
+  async initializePaymentSessionByBookingNumber(
+    bookingNumber: string,
+    userId: string,
+    allowedConsumerIdOverride?: string,
+  ) {
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('INITIALIZE_TIMEOUT')), INITIALIZE_SESSION_TIMEOUT_MS),
     );
@@ -209,9 +274,16 @@ export class PaymentsService {
     const work = (async () => {
       const booking = await this.bookingsService.findOneByBookingNumber(bookingNumber);
 
-      if (booking.consumerId !== userId) {
-        throw new ForbiddenException('Access denied to this booking');
+      const isConsumer =
+        booking.consumerId === userId ||
+        (allowedConsumerIdOverride && booking.consumerId === allowedConsumerIdOverride);
+      if (!isConsumer) {
+        throw new ForbiddenException(
+          'Access denied to this booking. The authenticated user must be the consumer of this booking. ' +
+            'In development, you can set header X-Consumer-Id to the booking consumer UUID to test.',
+        );
       }
+      const effectiveUserId = booking.consumerId === userId ? userId : allowedConsumerIdOverride!;
 
       const bookingId = booking.id;
       const totalAmount = Number(booking.totalAmount ?? 0);
@@ -224,8 +296,7 @@ export class PaymentsService {
           status: In(['PENDING', 'PROCESSING']),
         },
       });
-
-      if (existing) {
+      if (existing && existing.expires_at > new Date()) {
         return this.formatSessionResponse(existing);
       }
 
@@ -234,7 +305,7 @@ export class PaymentsService {
         session_id: sessionId,
         contract_id: bookingId,
         booking_id: bookingId,
-        buyer_id: userId,
+        buyer_id: effectiveUserId,
         total_amount: totalAmount,
         service_amount: agreedPrice,
         platform_fee: platformFee,
@@ -262,16 +333,24 @@ export class PaymentsService {
   private async validateContract(
     contractId: string,
     userId: string,
+    allowedConsumerIdOverride?: string,
   ): Promise<{
     booking_id: string;
     total_amount: number;
     agreed_price: number;
     platform_fee: number;
+    consumer_id: string;
   }> {
     const contract = await this.bookingsService.findOneSmartContract(contractId);
 
-    if (contract.consumerId !== userId) {
-      throw new ForbiddenException('Access denied to this contract');
+    const isConsumer =
+      contract.consumerId === userId ||
+      (allowedConsumerIdOverride && contract.consumerId === allowedConsumerIdOverride);
+    if (!isConsumer) {
+      throw new ForbiddenException(
+        'Access denied to this contract. The authenticated user must be the consumer. ' +
+          'In development, you can set header X-Consumer-Id to the contract consumer UUID to test.',
+      );
     }
 
     const booking = contract.booking;
@@ -288,6 +367,7 @@ export class PaymentsService {
       total_amount: totalAmount,
       agreed_price: agreedPrice,
       platform_fee: platformFee,
+      consumer_id: contract.consumerId,
     };
   }
 
@@ -304,7 +384,7 @@ export class PaymentsService {
       available_methods: [
         { method_type: 'GCASH', display_name: 'GCash', fee: 'Free' },
         { method_type: 'PAYMAYA', display_name: 'PayMaya', fee: 'Free' },
-        { method_type: 'QRPH', display_name: 'QR.ph', fee: 'Free' },
+        // { method_type: 'QRPH', display_name: 'QR.ph', fee: 'Free' },
         { method_type: 'CARD', display_name: 'Credit/Debit Card', fee: '2.5%' },
         { method_type: 'INSTAPAY', display_name: 'InstaPay', fee: '₱10' },
       ],
@@ -690,56 +770,164 @@ export class PaymentsService {
 
     return {
       items: formattedTransactions,
-      total: total, // 실제 총 개수 반환
+      total: total, // 실제 총 개수 반환 // found the translation:
+      // Returns the actual total count
       page: page,
       limit: maxLimit,
     };
   }
+  async topupViaXendit(userId: string, dto: WalletTopupDto) {
+    const { amount, payment_method, card_details } = dto;
 
-  async topup(userId: string, topupDto: WalletTopupDto) {
-    if (topupDto.amount <= 0) {
-      throw new BadRequestException('Top-up amount must be greater than 0');
-    }
+    // 1. Hardcoded Xendit return URLs - redirects to after payment
+    const successUrl = `${process.env.BASE_URL}/payment/topup/success`;
+    const failureUrl = `${process.env.BASE_URL}/payment/topup/failure`;
+    // Place your url here: https://api.yourdomain.com/payment/topup/success.
+    
+    let channel_code: string; // let > const = their values will be assigned inside the switch because they don't have a value yet at this point.
+    let channel_properties: Record<string, any>; // same reason
+    // Record,<string, any> - a flexible object that can hold different properties for each payment method.
 
-    const wallet = await this.getOrCreateWallet(userId);
-    // NaN 체크 및 0으로 변환
-    let balanceBefore = Number(wallet.balance || 0);
-    if (isNaN(balanceBefore)) {
-      balanceBefore = 0;
-    }
-    const amount = Number(topupDto.amount);
+    switch (payment_method) {
+      case TopupPaymentMethod.GCASH:
+        channel_code = 'PH_GCASH';
+        channel_properties = { // GCash only needs the 3 redirect URLs.
+          success_return_url: successUrl,
+          failure_return_url: failureUrl,
+          cancel_return_url:  failureUrl, // still treated as failure
+        };
+        break;
 
-    // balance 업데이트 (NaN 방지)
-    const newBalance = balanceBefore + amount;
-    if (isNaN(newBalance)) {
-      throw new BadRequestException('Invalid balance calculation');
-    }
+      case TopupPaymentMethod.PAYMAYA:
+        channel_code = 'PH_PAYMAYA';
+        channel_properties = { // PayMaya only needs the 3 redirect URLs.
+          success_return_url: successUrl,
+          failure_return_url: failureUrl,
+          cancel_return_url:  failureUrl, // still treated as failure
+        };
+        break;
 
-    // Raw SQL로 직접 업데이트하여 NaN 문제 방지
-    await this.walletRepository.manager.query(
-      `
-      UPDATE wallets
-      SET balance = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = $2
-      `,
-      [newBalance, userId],
-    );
+      case TopupPaymentMethod.CARD: // Cards need actual card info passed directly because Xendit processes the card charge immediately
+        if (!card_details) {
+          throw new BadRequestException('card_details is required for card payments');
+        } // Cards are the only method that requires extra fields.
+        channel_code = 'CARDS';
+        channel_properties = {
+          success_return_url:    successUrl,
+          failure_return_url:    failureUrl,
+          card_number:           card_details.card_number,
+          expiry_month:          card_details.exp_month,
+          expiry_year:           card_details.exp_year,
+          cvn:                   card_details.cvv, // Card Verification Number
+          // DTO accepts cvv from the user, then renames it to cvn
+          cardholder_first_name: card_details.cardholder_name.split(' ')[0] ?? '', // Xendit requires first and last name separately
+          cardholder_last_name:  card_details.cardholder_name.split(' ').slice(1).join(' ') ?? '', // Xendit requires first and last name separately
+          cardholder_email:      card_details.cardholder_email,
+          skip_three_ds:         false, // always require 3DS for safety
+        };
+        break;
 
-    // 업데이트된 지갑 다시 조회
-    const savedWallet = await this.getOrCreateWallet(userId);
-    const balanceAfter = Number(savedWallet.balance || 0);
+      case TopupPaymentMethod.INSTAPAY:
+        channel_code = 'PH_INSTAPAY'; 
+        channel_properties = { // PayMaya only needs the 3 redirect URLs.
+          success_return_url: successUrl,
+          failure_return_url: failureUrl,
+          cancel_return_url:  failureUrl, // still treated as failure
+        };
+        break;
 
-    await this.createWalletTransaction({
-      walletId: savedWallet.id,
+    // 2. Save pending record towadrs DB before calling Xendit
+    // This `referenceId` is sent to Xendit as the `reference_id`. 
+    // It's also your idempotency key
+    const referenceId = `topup-${userId}-${Date.now()}`; 
+    // topup - prefix
+    // userId - who initiated?
+    // Date.now() - current timestamp
+    const wallet       = await this.getOrCreateWallet(userId); // find or create a wallet?
+    // await - wait for the result
+    const balanceBefore = Number(wallet.balance || 0); // GET the current balance
+    // `Number()` converts it safely because DB values can sometimes come back as strings.
+
+
+    await this.createWalletTransaction({ // records the transaction in the DB *BEFORE* Xendit
+      walletId: wallet.id,
       userId,
-      type: 'deposit',
+      type:'deposit',
       amount,
       balanceBefore,
-      balanceAfter: isNaN(balanceAfter) ? newBalance : balanceAfter,
-      description: 'Wallet top-up',
+      balanceAfter: balanceBefore, // To be updated by webhook later
+      // Explanation: balanceAfter equals balanceBefore 
+      // The user hasn't actually paid yet at this point
+      // This is still a placeholder due to the payment is still attempting
+      description: `Wallet top-up via ${payment_method} — ref: ${referenceId}`,
+      paymentMethod: payment_method,
     });
 
-    return { balance: isNaN(balanceAfter) ? newBalance : balanceAfter, message: 'Top-up successful' };
+    // 3. Call Xendit v3 API - but why v3 and not v4?
+    try {
+      const response = await this.xenditApiClient.createPaymentRequest({
+        // call the XenditApiClient service - xendit-api.client.ts
+        reference_id: referenceId,
+        type: 'PAY', // one-time payment
+        country: 'PH',
+        currency: 'PHP', 
+        request_amount: amount,
+        capture_method: 'AUTOMATIC', // Charge immediately
+        channel_code, // (GCASH, PAYMAYA, INSTAPAY (invoice method only), Card (only works in Invoice method))
+        channel_properties, // from switch - depends on the params required for the channel code
+        description: `Wallet top-up — ₱${amount} (${payment_method})`,
+        metadata: { // extra info for your records (Xendit stores but never used)
+          user_id:     userId, // Whose?
+          type:        'wallet_topup',
+          environment: process.env.NODE_ENV ?? 'development',
+        },
+      });
+
+      // 4. Extract payment URL or kaya po QR code from Xendit response
+      const actions = response.actions ?? [];
+      const redirectAction = actions.find( // find - loops through the array and returns the first item that matches the condition.
+        (a: any) =>
+          a.type === 'REDIRECT_CUSTOMER' || a.action === 'AUTH' || a.action === 'VIEW',
+      ); // use || because of different conditions for field names
+      const qrAction = actions.find(
+        (a: any) => a.action === 'QR_CHECKOUT' || a.type === 'QR_CODE' || a.qr_code,
+      );
+
+      const paymentUrl = redirectAction?.value ?? redirectAction?.url ?? null; // extracting url
+      const qrCode     = qrAction?.qr_code ?? qrAction?.value ?? null; // extracting qr
+
+      return {
+        success: true,
+        data: {
+          reference_id: referenceId,
+          xendit_payment_id: response.id ?? response.payment_request_id,
+          amount,
+          payment_method, // nasa redirect_required
+          payment_url: paymentUrl,  // open this in InAppBrowser, that's the idea
+          qr_code: qrCode, // display this as QR image
+          redirect_required: ['GCASH', 'PAYMAYA', 'CARD', 'INSTAPAY'].includes(payment_method),
+          status: response.status, //  PENDING, REQUIRES_ACTION etc
+          message: this.getTopupInstructions(payment_method),
+        },
+      };
+    } catch (error: any) {
+      this.logger.error(`Topup Xendit call failed for user ${userId}: ${error.message}`);
+      throw new BadRequestException(
+        `Payment creation failed: ${error?.response?.data?.message ?? error.message}`,
+      );
+    }
+  }
+
+  /* Instructions per payment method */
+  private getTopupInstructions(method: string): string {
+    const map: Record<string, string> = {
+      GCASH: 'You will be redirected to GCash to complete your top-up.',
+      PAYMAYA: 'You will be redirected to PayMaya to complete your top-up.',
+      CARD: 'You will be redirected to complete 3DS card authentication.',
+      INSTAPAY: 'You will be redirected to select your bank for InstaPay transfer.',
+      // QRPH: 'Scan the QR code using any QR.ph-enabled banking app.', // for gcash
+    };
+    return map[method] ?? 'Complete your payment on the redirect page.';
   }
 
   async withdraw(userId: string, withdrawDto: {
