@@ -8,6 +8,7 @@ import { PayoutController } from './payout.controller';
 import { PaymentsService } from './payments.service';
 import { XenditPaymentService } from './services/xendit-payment.service';
 import { XenditWebhookService } from './services/xendit-webhook.service';
+import { XenditApiClient } from './services/xendit-api.client';
 import { Payment } from './entities/payment.entity';
 import { Transaction } from './entities/transaction.entity';
 import { Escrow } from './entities/escrow.entity';
@@ -49,7 +50,7 @@ import { InstantInvoicesModule } from '../instant-invoices/instant-invoices.modu
     XenditWebhookController,
     PayoutController,
   ],
-  providers: [PaymentsService, XenditPaymentService, XenditWebhookService],
+  providers: [PaymentsService, XenditPaymentService, XenditWebhookService, XenditApiClient],
   exports: [PaymentsService],
 })
 export class PaymentsModule {}

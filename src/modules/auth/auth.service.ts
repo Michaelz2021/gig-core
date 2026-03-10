@@ -616,10 +616,24 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto) {
-    console.log('[AuthService] Login attempt for email:', loginDto.email);
-    const user = await this.validateUser(loginDto.email, loginDto.password);
+    const loginType = (loginDto['login-type'] ?? loginDto.userType ?? loginDto['user-type'])?.toLowerCase();
+    const usePhoneLogin = loginType === 'phone' && loginDto.phone && String(loginDto.phone).trim() !== '';
+
+    let user: any = null;
+    if (usePhoneLogin) {
+      // 전화번호 로그인: users 테이블에서 phone으로 조회 후 비밀번호 비교
+      console.log('[AuthService] Login attempt for phone:', loginDto.phone);
+      user = await this.validateUserByPhone(loginDto.phone!.trim(), loginDto.password);
+    } else {
+      // 이메일 로그인: users 테이블에서 email로 조회 후 비밀번호 비교
+      if (!loginDto.email?.trim()) {
+        throw new BadRequestException('email or phone is required. For phone login use login-type: "phone" and phone.');
+      }
+      console.log('[AuthService] Login attempt for email:', loginDto.email);
+      user = await this.validateUser(loginDto.email!.trim(), loginDto.password);
+    }
     if (!user) {
-      console.log('[AuthService] Login failed: Invalid credentials for email:', loginDto.email);
+      console.log('[AuthService] Login failed: Invalid credentials');
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -755,6 +769,25 @@ export class AuthService {
     }
     const isValidPassword = await (user as any).validatePassword(password);
     console.log('[AuthService] Password validation result:', isValidPassword);
+    if (isValidPassword) {
+      const { password: _, ...result } = user;
+      return result;
+    }
+    return null;
+  }
+
+  async validateUserByPhone(phone: string, password: string): Promise<any> {
+    console.log('[AuthService] validateUserByPhone called for phone:', phone);
+    const user = await this.usersService.findByPhone(phone);
+    if (!user) {
+      console.log('[AuthService] User not found for phone:', phone);
+      return null;
+    }
+    if (user.status && user.status !== UserStatus.ACTIVE) {
+      console.log('[AuthService] User is not active. Status:', user.status);
+      return null;
+    }
+    const isValidPassword = await (user as any).validatePassword(password);
     if (isValidPassword) {
       const { password: _, ...result } = user;
       return result;

@@ -116,7 +116,11 @@ async function bootstrap() {
     'http://43.201.114.64:5173',
     'http://43.201.114.64:3000',
     'http://13.125.20.235:5173',  // 프론트/API (서버 IP)
-    'http://13.125.20.235:3000',  // Swagger/API - 이 오리진 없으면 브라우저에서 "Failed to fetch" 발생
+    'http://13.125.20.235:3000',  // Swagger/API
+    'http://www.gigmarket.ph:3000',
+    'https://www.gigmarket.ph',
+    'http://gigmarket.ph:3000',
+    'https://gigmarket.ph',
     ...corsOrigin.filter((origin) => origin.trim() !== '' && origin !== '*'),
   ];
 

@@ -828,15 +828,18 @@ export class PaymentsService {
         break;
 
       case TopupPaymentMethod.INSTAPAY:
-        channel_code = 'PH_INSTAPAY'; 
-        channel_properties = { // PayMaya only needs the 3 redirect URLs.
+        channel_code = 'PH_INSTAPAY';
+        channel_properties = {
           success_return_url: successUrl,
           failure_return_url: failureUrl,
-          cancel_return_url:  failureUrl, // still treated as failure
+          cancel_return_url: failureUrl,
         };
         break;
+      default:
+        throw new BadRequestException(`Unsupported payment method: ${payment_method}`);
+    }
 
-    // 2. Save pending record towadrs DB before calling Xendit
+    // 2. Save pending record towards DB before calling Xendit
     // This `referenceId` is sent to Xendit as the `reference_id`. 
     // It's also your idempotency key
     const referenceId = `topup-${userId}-${Date.now()}`; 
