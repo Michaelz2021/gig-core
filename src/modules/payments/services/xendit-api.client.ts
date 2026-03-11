@@ -57,7 +57,27 @@ export interface CreatePaymentRequestResponse {
   created?: string;
   updated?: string;
 }
+// Added invoice method here
+export interface CreateInvoicePayload {
+  external_id: string;
+  amount: number;
+  currency: string;
+  description?: string;
+  success_redirect_url?: string;
+  failure_redirect_url?: string;
+  payment_methods?: string[];
+}
 
+export interface CreateInvoiceResponse {
+  id: string;
+  external_id: string;
+  status: string;
+  invoice_url: string;
+  amount: number;
+  currency: string;
+  description?: string;
+}
+// End of added here
 @Injectable()
 export class XenditApiClient {
   private readonly logger = new Logger(XenditApiClient.name);
@@ -109,6 +129,19 @@ export class XenditApiClient {
       '================================================',
     ].join('\n');
     this.logger.log(responseText);
+
+    return data;
+  }
+  // Added here: why v2? Because v3 is direct payment using the apps and v2 is for invoice
+  async createInvoice(payload: CreateInvoicePayload): Promise<CreateInvoiceResponse> {
+    this.logger.log(`[Xendit Invoice] POST /v2/invoices\n${JSON.stringify(payload, null, 2)}`);
+
+    const { data } = await this.client.post<CreateInvoiceResponse>(
+      '/v2/invoices',
+      payload,
+    );
+
+    this.logger.log(`[Xendit Invoice Response]\n${JSON.stringify(data, null, 2)}`);
 
     return data;
   }

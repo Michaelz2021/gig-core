@@ -36,7 +36,11 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Top up wallet' })
   @ApiOkResponse({ description: 'Top up successful' })
   topup(@GetUser() user: any, @Body() topupDto: WalletTopupDto) {
-    return this.paymentsService.topup(user.id, topupDto);
+    // return this.paymentsService.topup(user.id, topupDto);
+    return this.paymentsService.topupViaXendit(user.id, topupDto);
+    // No paymentsService.topup implemented yet, probably:
+    // async topupViaXendit(userId: string, dto: WalletTopupDto) is the one using?
+    
   }
 
   @Post('wallet/withdraw')

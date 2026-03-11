@@ -384,7 +384,7 @@ export class PaymentsService {
       available_methods: [
         { method_type: 'GCASH', display_name: 'GCash', fee: 'Free' },
         { method_type: 'PAYMAYA', display_name: 'PayMaya', fee: 'Free' },
-        // { method_type: 'QRPH', display_name: 'QR.ph', fee: 'Free' },
+        { method_type: 'QRPH', display_name: 'QR.ph', fee: 'Free' },
         { method_type: 'CARD', display_name: 'Credit/Debit Card', fee: '2.5%' },
         { method_type: 'INSTAPAY', display_name: 'InstaPay', fee: '₱10' },
       ],
@@ -790,7 +790,7 @@ export class PaymentsService {
 
     switch (payment_method) {
       case TopupPaymentMethod.GCASH:
-        channel_code = 'PH_GCASH';
+        channel_code = 'GCASH';
         channel_properties = { // GCash only needs the 3 redirect URLs.
           success_return_url: successUrl,
           failure_return_url: failureUrl,
@@ -799,7 +799,7 @@ export class PaymentsService {
         break;
 
       case TopupPaymentMethod.PAYMAYA:
-        channel_code = 'PH_PAYMAYA';
+        channel_code = 'PAYMAYA';
         channel_properties = { // PayMaya only needs the 3 redirect URLs.
           success_return_url: successUrl,
           failure_return_url: failureUrl,
@@ -807,34 +807,64 @@ export class PaymentsService {
         };
         break;
 
-      case TopupPaymentMethod.CARD: // Cards need actual card info passed directly because Xendit processes the card charge immediately
-        if (!card_details) {
-          throw new BadRequestException('card_details is required for card payments');
-        } // Cards are the only method that requires extra fields.
-        channel_code = 'CARDS';
-        channel_properties = {
-          success_return_url:    successUrl,
-          failure_return_url:    failureUrl,
-          card_number:           card_details.card_number,
-          expiry_month:          card_details.exp_month,
-          expiry_year:           card_details.exp_year,
-          cvn:                   card_details.cvv, // Card Verification Number
-          // DTO accepts cvv from the user, then renames it to cvn
-          cardholder_first_name: card_details.cardholder_name.split(' ')[0] ?? '', // Xendit requires first and last name separately
-          cardholder_last_name:  card_details.cardholder_name.split(' ').slice(1).join(' ') ?? '', // Xendit requires first and last name separately
-          cardholder_email:      card_details.cardholder_email,
-          skip_three_ds:         false, // always require 3DS for safety
+      case TopupPaymentMethod.CARD: {
+        const referenceId = `topup-${userId}-${Date.now()}`;
+        const invoiceResponse = await this.xenditApiClient.createInvoice({
+          external_id: referenceId,
+          amount,
+          currency: 'PHP',
+          description: `Wallet top-up ₱${amount} via Card`,
+          success_redirect_url: successUrl,
+          failure_redirect_url: failureUrl,
+          payment_methods: ['CREDIT_CARD'],
+        });
+        return {
+          success: true,
+          data: {
+            reference_id: referenceId,
+            xendit_payment_id: invoiceResponse.id,
+            amount,
+            payment_method: 'CARD',
+            payment_url: invoiceResponse.invoice_url,
+            qr_code: null,
+            redirect_required: true,
+            status: invoiceResponse.status,
+            message: 'You will be redirected to complete card payment.',
+          },
         };
-        break;
-
-      case TopupPaymentMethod.INSTAPAY:
-        channel_code = 'PH_INSTAPAY'; 
-        channel_properties = { // PayMaya only needs the 3 redirect URLs.
-          success_return_url: successUrl,
-          failure_return_url: failureUrl,
-          cancel_return_url:  failureUrl, // still treated as failure
+      }
+      // I changed InstaPay method to invoice since it is the only available payment method
+      case TopupPaymentMethod.INSTAPAY: {
+        const referenceId = `topup-${userId}-${Date.now()}`;
+        const invoiceResponse = await this.xenditApiClient.createInvoice({
+          external_id: referenceId,
+          amount,
+          currency: 'PHP',
+          description: `Wallet top-up ₱${amount} via InstaPay`,
+          success_redirect_url: successUrl,
+          failure_redirect_url: failureUrl,
+        });
+        return {
+          success: true,
+          data: {
+            reference_id: referenceId,
+            xendit_payment_id: invoiceResponse.id,
+            amount,
+            payment_method: 'INSTAPAY',
+            payment_url: invoiceResponse.invoice_url,
+            qr_code: null,
+            redirect_required: true,
+            status: invoiceResponse.status,
+            message: 'You will be redirected to select your bank for InstaPay transfer.',
+          },
         };
+      }
+      case TopupPaymentMethod.QRPH:
+        channel_code = 'QRPH';
+        channel_properties = {};
+        // QRPH needs no direct, only helps in QRs, mostly needed by InstaPay
         break;
+    }
 
     // 2. Save pending record towadrs DB before calling Xendit
     // This `referenceId` is sent to Xendit as the `reference_id`. 
@@ -906,6 +936,8 @@ export class PaymentsService {
           payment_url: paymentUrl,  // open this in InAppBrowser, that's the idea
           qr_code: qrCode, // display this as QR image
           redirect_required: ['GCASH', 'PAYMAYA', 'CARD', 'INSTAPAY'].includes(payment_method),
+          // no QRPH, since it is not a payment method, rather a helper for QRs
+          // CARD and INSTAPAY will not reach here since they have their own flow using Invoice, but just in case
           status: response.status, //  PENDING, REQUIRES_ACTION etc
           message: this.getTopupInstructions(payment_method),
         },
@@ -925,7 +957,7 @@ export class PaymentsService {
       PAYMAYA: 'You will be redirected to PayMaya to complete your top-up.',
       CARD: 'You will be redirected to complete 3DS card authentication.',
       INSTAPAY: 'You will be redirected to select your bank for InstaPay transfer.',
-      // QRPH: 'Scan the QR code using any QR.ph-enabled banking app.', // for gcash
+      QRPH: 'Scan the QR code using any QR.ph-enabled banking app.', // for QRs
     };
     return map[method] ?? 'Complete your payment on the redirect page.';
   }

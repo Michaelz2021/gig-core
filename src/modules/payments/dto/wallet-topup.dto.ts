@@ -17,6 +17,7 @@
     PAYMAYA  = 'PAYMAYA',
     CARD     = 'CARD',
     INSTAPAY = 'INSTAPAY',
+    QRPH = 'QRPH',
   }
 
   // Card Details (required only when payment_method = CARD) 

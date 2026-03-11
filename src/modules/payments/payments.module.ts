@@ -22,6 +22,7 @@ import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { RewardsModule } from '../rewards/rewards.module';
 import { InstantInvoicesModule } from '../instant-invoices/instant-invoices.module';
+import { XenditApiClient } from './services/xendit-api.client';
 
 @Module({
   imports: [
@@ -49,7 +50,7 @@ import { InstantInvoicesModule } from '../instant-invoices/instant-invoices.modu
     XenditWebhookController,
     PayoutController,
   ],
-  providers: [PaymentsService, XenditPaymentService, XenditWebhookService],
+  providers: [PaymentsService, XenditPaymentService, XenditWebhookService, XenditApiClient],
   exports: [PaymentsService],
 })
 export class PaymentsModule {}
