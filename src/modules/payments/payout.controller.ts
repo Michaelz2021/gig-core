@@ -21,7 +21,6 @@ export class PayoutController {
       '성공 시 200과 success: true, data 안에 summary/available_payouts/recent_payouts를 반환합니다. 인증 실패 시에만 401/403이 나옵니다.',
   })
   @ApiOkResponse({
-    status: 200,
     description: '성공 — success: true, data에 출금 요약·출금 가능 목록·최근 출금 내역',
     schema: {
       type: 'object',

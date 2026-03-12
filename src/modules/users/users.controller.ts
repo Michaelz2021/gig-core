@@ -44,6 +44,8 @@ import { UpdateProviderAdDto } from './dto/update-provider-ad.dto';
 import { GetProvidersDto } from './dto/get-providers.dto';
 import { TopTierProvidersResponseDto } from './dto/top-tier-provider-response.dto';
 import { ProviderAdsListResponseDto, ProviderAdResponseDto } from './dto/provider-ad-response.dto';
+import { SkillTestSubmitDto, SkillTestSubmitResponseDto } from './dto/skill-test-submit.dto';
+import { ProviderSkillTestService } from './services/provider-skill-test.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
@@ -58,6 +60,7 @@ export class UsersController {
     private readonly userDeviceTokenService: UserDeviceTokenService,
     private readonly providerRankingService: ProviderRankingService,
     private readonly providerAdService: ProviderAdService,
+    private readonly providerSkillTestService: ProviderSkillTestService,
   ) {}
 
   @Get('me')
@@ -274,6 +277,20 @@ export class UsersController {
   @ApiResponse({ status: 404, description: 'Provider ad not found' })
   async deleteProviderAd(@Param('id') id: string) {
     return this.providerAdService.remove(id);
+  }
+
+  @Post('providers/verification/skill-test/submit')
+  @ApiOperation({
+    summary: 'Submit skill test result',
+    description:
+      'Submit AI skill test result for the authenticated provider. Saves to provider_skill_test_results and updates providers.ai_skill_test_score_pct. Score mapping: ≥80%→100 pts, 60–79%→50 pts, <60%→0 pts; final value is average across categories.',
+  })
+  @ApiBody({ type: SkillTestSubmitDto })
+  @ApiResponse({ status: 200, description: 'Skill test result recorded', type: SkillTestSubmitResponseDto })
+  @ApiResponse({ status: 403, description: 'Not a provider (provider profile not found for this user)' })
+  async submitSkillTest(@GetUser() user: any, @Body() dto: SkillTestSubmitDto) {
+    const data = await this.providerSkillTestService.submitSkillTest(user.id, dto);
+    return { success: true, data };
   }
 
   @Get('providers')

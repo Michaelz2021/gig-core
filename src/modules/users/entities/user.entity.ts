@@ -100,6 +100,12 @@ export class User {
   @Column({ name: 'is_id_verified', default: false })
   isIdVerified: boolean;
 
+  @Column({ name: 'ai_confidence_score', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  aiConfidenceScore: number | null;
+
+  @Column({ name: 'kyc_detail', type: 'jsonb', nullable: true })
+  kycDetail: Record<string, unknown> | null;
+
   @Column({ name: 'two_factor_enabled', default: false })
   twoFactorEnabled: boolean;
 

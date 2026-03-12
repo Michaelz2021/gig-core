@@ -98,6 +98,10 @@ export class Provider {
   @Column({ name: 'total_jobs_completed', default: 0 })
   totalJobsCompleted: number; // 총 완료 작업 수
 
+  // AI Skill Test (0–100, from provider_skill_test_results: ≥80%→100, 60–79%→50, <60%→0, then average)
+  @Column({ name: 'ai_skill_test_score_pct', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  aiSkillTestScorePct: number | null;
+
   // 상태
   @Column({ name: 'is_active', default: true })
   isActive: boolean; // 활성화 여부

@@ -21,7 +21,7 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'User registration (sends OTP)',
     description: `Register a new user. OTP is sent to the phone and email verification link is sent to email.
@@ -42,8 +42,8 @@ export class AuthController {
 - Failure: Detailed error message`,
   })
   @ApiResponse({
-    status: 200,
-    description: 'Registration success - OTP sent.',
+    status: 201,
+    description: 'Registration success - OTP/verification email sent when services are configured.',
     schema: {
       type: 'object',
       properties: {
