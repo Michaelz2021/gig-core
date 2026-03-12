@@ -127,7 +127,7 @@ export class ListingsService {
       return { items: [], total: 0 };
     }
     const [listings, total] = await this.listingRepository.findAndCount({
-      where: { providerId: provider.id },
+      where: { providerId: provider.id, isActive: true },
       order: { createdAt: 'DESC' },
     });
 

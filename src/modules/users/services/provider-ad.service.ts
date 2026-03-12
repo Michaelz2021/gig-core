@@ -106,8 +106,9 @@ export class ProviderAdService {
   }
 
   /**
-   * ID로 단일 광고 조회, 없으면 providerId로 해석해 해당 프로바이더 광고 목록 반환.
-   * 앱이 GET .../providers/ads/{providerId} 로 호출하는 경우 404 대신 목록을 반환하기 위함.
+   * ID로 단일 광고 조회. 없으면 provider ID(providers.id)로 해당 프로바이더 광고 목록 반환.
+   * 그래도 없으면 ID를 user ID로 해석해 해당 유저의 provider를 찾고, 그 provider의 광고 목록 반환.
+   * (앱이 GET .../providers/ads/{userId} 로 호출하는 경우 대응)
    */
   async findOneOrListByProviderId(id: string): Promise<ProviderAd | { items: ProviderAd[]; totalCount: number }> {
     const ad = await this.providerAdRepository.findOne({
@@ -116,8 +117,16 @@ export class ProviderAdService {
     });
     if (ad) return ad;
 
-    const byProvider = await this.findByProviderId(id);
+    // ID를 provider ID(providers.id)로 해석
+    let byProvider = await this.findByProviderId(id);
     if (byProvider.length > 0) {
+      return { items: byProvider, totalCount: byProvider.length };
+    }
+
+    // ID를 user ID로 해석: 해당 user의 provider를 찾아 그 provider의 광고 목록 반환
+    const provider = await this.providerRepository.findOne({ where: { userId: id } });
+    if (provider) {
+      byProvider = await this.findByProviderId(provider.id);
       return { items: byProvider, totalCount: byProvider.length };
     }
 

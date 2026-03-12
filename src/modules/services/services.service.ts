@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Service } from './entities/service.entity';
@@ -70,7 +70,7 @@ export class ServicesService {
       relations: ['provider'],
     });
     if (!service) {
-      throw new Error(`Service with ID ${id} not found`);
+      throw new NotFoundException(`Service with ID ${id} not found`);
     }
     return service;
   }
@@ -167,7 +167,7 @@ export class ServicesService {
       where: { id },
     });
     if (!category) {
-      throw new Error(`Service category with ID ${id} not found`);
+      throw new NotFoundException(`Service category with ID ${id} not found`);
     }
     return category;
   }

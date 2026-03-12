@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersController } from './users.controller';
 import { ProvidersVerificationController } from './providers-verification.controller';
+import { ProviderVerificationController } from './provider-verification.controller';
 import { UsersService } from './users.service';
 import { User } from './entities/user.entity';
 import { ProviderFavorite } from './entities/provider-favorite.entity';
@@ -20,6 +21,7 @@ import { ProviderAdService } from './services/provider-ad.service';
 import { UserDeviceTokenService } from './services/user-device-token.service';
 import { ProviderSkillTestService } from './services/provider-skill-test.service';
 import { KycCompleteService } from './services/kyc-complete.service';
+import { PortfolioVerificationService } from './services/portfolio-verification.service';
 import { TrustScore } from '../trust-score/entities/trust-score.entity';
 import { ServiceCategory } from '../services/entities/service-category.entity';
 
@@ -41,7 +43,11 @@ import { ServiceCategory } from '../services/entities/service-category.entity';
       ServiceCategory,
     ]),
   ],
-  controllers: [UsersController, ProvidersVerificationController],
+  controllers: [
+    UsersController,
+    ProvidersVerificationController,
+    ProviderVerificationController,
+  ],
   providers: [
     UsersService,
     ProviderRankingService,
@@ -50,6 +56,7 @@ import { ServiceCategory } from '../services/entities/service-category.entity';
     ProviderTrustScoreService,
     ProviderSkillTestService,
     KycCompleteService,
+    PortfolioVerificationService,
   ],
   exports: [
     UsersService,
@@ -59,6 +66,7 @@ import { ServiceCategory } from '../services/entities/service-category.entity';
     ProviderTrustScoreService,
     ProviderSkillTestService,
     KycCompleteService,
+    PortfolioVerificationService,
   ],
 })
 export class UsersModule {}

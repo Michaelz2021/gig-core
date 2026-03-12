@@ -39,6 +39,19 @@ export class Provider {
   })
   businessType: BusinessType;
 
+  @Column({ name: 'vatable', default: false })
+  vatable: boolean;
+
+  @Column({ name: 'business_address', type: 'jsonb', nullable: true })
+  businessAddress: {
+    addressLine1?: string;
+    addressLine2?: string;
+    city?: string;
+    province?: string;
+    postalCode?: string;
+    country?: string;
+  } | null;
+
   // 인증 데이터 (Verification Documents)
   @Column({ name: 'government_id_type', nullable: true })
   governmentIdType: string; // 신분증 유형 (예: Driver's License, UMID, SSS)

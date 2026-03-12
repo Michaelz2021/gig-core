@@ -80,7 +80,8 @@ export class ServicesController {
   @Delete(':id')
   @ApiOperation({ summary: 'Delete service' })
   @ApiParam({ name: 'id', description: 'Service ID' })
-  @ApiResponse({ status: 200, description: 'Service deleted' })
+  @ApiResponse({ status: 200, description: 'Service deleted (soft: isActive=false)' })
+  @ApiResponse({ status: 404, description: 'Service with ID not found' })
   remove(@Param('id') id: string) {
     return this.servicesService.delete(id);
   }
