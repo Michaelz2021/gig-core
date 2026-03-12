@@ -80,7 +80,6 @@ export class Notification {
   createdAt: Date;
 
   // 하위 호환 (DB에 없음, insert/update 제외)
-  @Column({ type: 'enum', enum: NotificationType, nullable: true, insert: false, update: false })
   type?: NotificationType;
 }
 

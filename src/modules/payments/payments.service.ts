@@ -60,28 +60,33 @@ export class PaymentsService {
       INSERT INTO wallet_transactions (
         wallet_id,
         user_id,
+        transaction_number,
         type,
         amount,
+        fee,
+        net_amount,
         balance_before,
         balance_after,
         description,
-        related_booking_id,
+        reference_id,
         payment_method
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
       `,
       [
         input.walletId,
         input.userId,
+        `TXN-${Date.now()}-${Math.random().toString(36).substring(2,9).toUpperCase()}`,
         input.type,
+        input.amount,
+        0,
         input.amount,
         input.balanceBefore,
         input.balanceAfter,
         input.description || null,
         input.relatedBookingId || null,
-        input.paymentMethod || null,
-      ],
-    );
+        input.paymentMethod || null
+      ]);
   }
 
   async processPayment(userId: string, processPaymentDto: ProcessPaymentDto): Promise<Payment> {
@@ -920,11 +925,11 @@ export class PaymentsService {
           a.type === 'REDIRECT_CUSTOMER' || a.action === 'AUTH' || a.action === 'VIEW',
       ); // use || because of different conditions for field names
       const qrAction = actions.find(
-        (a: any) => a.action === 'QR_CHECKOUT' || a.type === 'QR_CODE' || a.qr_code,
+        (a: any) => a.type === 'PRESENT_TO_CUSTOMER' && a.descriptor === 'QR_STRING'
       );
-
+      
       const paymentUrl = redirectAction?.value ?? redirectAction?.url ?? null; // extracting url
-      const qrCode     = qrAction?.qr_code ?? qrAction?.value ?? null; // extracting qr
+      const qrCode = qrAction?.value ?? null;
 
       return {
         success: true,
