@@ -77,6 +77,34 @@ export interface CreateInvoiceResponse {
   currency: string;
   description?: string;
 }
+
+// Xendit Payout API (v2) - sends money to provider's GCash or bank
+// POST /v2/payouts
+export interface CreatePayoutPayload {
+  reference_id: string;       // our internal payout ID
+  channel_code: string;       // e.g. PH_GCASH
+  channel_properties: {
+    account_number: string;   // phone number for GCash
+    account_holder_name: string;
+  };
+  amount: number;
+  description?: string;
+  currency: string;
+  receipt_notification?: {
+    email_to?: string[];
+  };
+}
+
+export interface CreatePayoutResponse {
+  id: string;                 // Xendit's disbursement ID
+  reference_id: string;
+  channel_code: string;
+  amount: number;
+  currency: string;
+  status: string;             // ACCEPTED, PENDING, etc.
+  created: string;
+  updated: string;
+}
 // End of added here
 @Injectable()
 export class XenditApiClient {
@@ -145,4 +173,23 @@ export class XenditApiClient {
 
     return data;
   }
+    async createPayout(payload: CreatePayoutPayload): Promise<CreatePayoutResponse> {
+    this.logger.log(`[Xendit Payout] POST /v2/payouts\n${JSON.stringify(payload, null, 2)}`);
+
+    const { data } = await this.client.post<CreatePayoutResponse>(
+      '/v2/payouts',
+      payload,
+      {
+        headers: {
+          // Payout API requires Xendit-Idempotency-Key to prevent duplicate payouts
+          'idempotency-key': payload.reference_id,
+        },
+      },
+    );
+
+    this.logger.log(`[Xendit Payout Response]\n${JSON.stringify(data, null, 2)}`);
+
+    return data;
+  }
 }
+

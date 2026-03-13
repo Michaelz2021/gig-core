@@ -122,9 +122,16 @@ export class PayoutController {
       },
     },
   })
-  getAvailablePayouts(@GetUser() _user: any) {
+  getAvailablePayouts(@GetUser() user: any) {
     // TODO: EscrowAccount + Bookings 조인으로 구현
-    throw new NotImplementedException('Available payouts API is not implemented yet.');
+    return this.paymentsService.getAvailablePayouts(user.id);
+  }
+  getPayOutHistory(
+    @GetUser() user: any,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ){
+    return this.paymentsService.getPayoutHistory(user.id, page, limit);
   }
 
   /**
@@ -236,9 +243,9 @@ export class PayoutController {
       },
     },
   })
-  requestPayout(@GetUser() _user: any, @Body() _body: any) {
+  requestPayout(@GetUser() user: any, @Body() body: any) {
     // TODO: escrow_accounts에서 eligible escrows 조회 → payouts 생성 → Xendit disbursement 요청
-    throw new NotImplementedException('Payout request API is not implemented yet.');
+    return this.paymentsService.requestPayout(user.id, body);
   }
 
   /**
@@ -288,9 +295,9 @@ export class PayoutController {
       },
     },
   })
-  getPayoutDetails(@GetUser() _user: any, @Param('payoutId') _payoutId: string) {
+  getPayoutDetails(@GetUser() user: any, @Param('payoutId') payoutId: string) {
     // TODO: payouts + escrow_accounts + bookings 조인으로 상세 조회
-    throw new NotImplementedException('Payout details API is not implemented yet.');
+    return this.paymentsService.getPayoutDetails(user.id, payoutId);
   }
 }
 

@@ -15,6 +15,7 @@ import { BookingsService } from '../bookings/bookings.service';
 import { UsersService } from '../users/users.service';
 import { XenditPaymentService } from './services/xendit-payment.service';
 import { XenditApiClient } from './services/xendit-api.client';
+import { Disbursement } from './entities/disbursement.entity';
 
 /** Initialize payment session 타임아웃(ms). DB/외부 지연 시 무한 로딩 방지 */
 const INITIALIZE_SESSION_TIMEOUT_MS = 15_000;
@@ -38,11 +39,14 @@ export class PaymentsService {
     private readonly escrowAccountRepository: Repository<EscrowAccount>,
     @InjectRepository(Payout)
     private readonly payoutRepository: Repository<Payout>,
+    @InjectRepository(Disbursement)
+    private readonly disbursementRepository: Repository<Disbursement>,
     private readonly bookingsService: BookingsService,
     private readonly usersService: UsersService,
     private readonly xenditPaymentService: XenditPaymentService,
     private readonly xenditApiClient: XenditApiClient,
   ) {}
+  
 
   private async createWalletTransaction(input: {
     walletId: string;
@@ -395,6 +399,302 @@ export class PaymentsService {
       ],
       expires_at: session.expires_at,
     };
+  }
+  /**
+   * GET method for payout
+   */
+  async getAvailablePayouts(userId: string) {
+    // 1. Get provider ID from user ID
+    const provider = await this.usersService.getProviderByUserId(userId);
+    // 2. If no provider profile, return empty list
+    if (!provider) {
+      return {
+        success: true,
+        data: [],
+      };
+    }
+    // 3. Query eescrow_acounts - not yet claimed (payout_id is NULL) and still PENDING
+    const escrows = await this.escrowAccountRepository
+                          .createQueryBuilder('e')
+                          .where('e.provider_id = :providerId', {providerId: provider.id })
+                          .andWhere('e.payout_id is NULL')
+                          .andWhere("e.disbursment_status = 'PENDING'")
+                          .orderBy('e.created_at', 'DESC')
+                          .getMany();
+    // 4. Build response - enrich each escrow with booking info
+    let total_available = 0;
+    const data = [];
+
+    for (const escrow of escrows) {
+      let bookingNumber = '';
+      let serviceName = '';
+      try {
+        const booking = await this.bookingsService.findOne(escrow.booking_id);
+        bookingNumber = booking.bookingNumber ?? '';
+        serviceName = booking.service?.title ?? booking.serviceDescription ?? 'Service';
+      }
+      catch {
+        // If booking not found, use defaults
+      }
+
+      const amount = Number(escrow.provider_amount ?? 0);
+      total_available += amount;
+
+      data.push({
+        escrow_id: escrow.escrow_id,
+        booking_id: escrow.booking_id,
+        booking_number: bookingNumber,
+        service_Name: serviceName,
+        contract_id: escrow.contract_id,
+        amount,
+        status: 'available',
+        available_from: escrow.funded_at ? escrow.funded_at.toISOString() : null,
+      });
+    }
+
+    return {
+      success: true,
+      data,
+      total_available,
+      count: data.length,
+    };
+  }
+  /**
+   * GET /api/v1/payout/history
+   * 과거 출금(disbursement/payout) 히스토리
+   */
+  async getPayoutHistory(userId: string, page: number = 1, limit: number = 20) {
+    const maxLimit = Math.min(limit, 100);
+    const offset = (page-1) * maxLimit;
+
+    // 1. GET total count
+    const total = await this.payoutRepository.count({
+      where: {user_id: userId},
+    });
+    // 2. GET paginated payouts
+    const payouts = await this.payoutRepository.find({
+      where: {user_id: userId},
+      order: {requested_at: 'DESC'},
+      take: maxLimit,
+      skip: offset,
+    });
+    // 3. For each payment, get them linked to escrow_accounts
+    const data = await Promise.all(
+      payouts.map(async (p) => {
+        const escrows = await this.escrowAccountRepository.find({
+          where: {payout_id: p.payout_id},
+        });
+
+        return {
+          payout_id: p.payout_id,
+          account: Number(p.amount ?? 0),
+          currency: p.currency,
+          payment_method: p.payment_method,
+          status: p.status,
+          xendit_disbursement: p.xendit_disbursement_id,
+          failure_code: p.failure_code ?? null,
+          failure_message: p.failure_message ?? null,
+          requested_at: p.requested_at ? p.requested_at.toISOString() : null,
+          completed_at: p.completed_at ? p.completed_at.toISOString() : null,
+          booking_count: escrows.length,
+        };
+      }),
+    );
+    return {
+      success: true,
+      data,
+      pagination: {
+        page,
+        limit: maxLimit,
+        total,
+        total_pages: Math.ceil(total/maxLimit),
+      },
+    };
+  }
+  /**
+   * GET payout/:payoutId
+   */
+  async getPayoutDetails(userId: string, payoutId: string) {
+    // 1. Find the payout — make sure it belongs to this user
+    const payout = await this.payoutRepository.findOne({
+      where: { payout_id: payoutId, user_id: userId },
+    });
+
+    if (!payout) {
+      throw new NotFoundException(`Payout ${payoutId} not found`);
+    }
+
+    // 2. Get all escrow_accounts linked to this payout
+    const escrows = await this.escrowAccountRepository.find({
+      where: { payout_id: payoutId },
+    });
+
+    // 3. Enrich each escrow with booking info
+    const items = await Promise.all(
+      escrows.map(async (escrow) => {
+        let bookingNumber = '';
+        try {
+          const booking = await this.bookingsService.findOne(escrow.booking_id);
+          bookingNumber = booking.bookingNumber ?? '';
+        } catch {
+          // use default if booking not found
+        }
+
+        return {
+          escrow_id: escrow.escrow_id,
+          booking_id: escrow.booking_id,
+          booking_number: bookingNumber,
+          contract_id: escrow.contract_id,
+          provider_amount: Number(escrow.provider_amount ?? 0),
+        };
+      }),
+    );
+
+    return {
+      success: true,
+      data: {
+        payout_id: payout.payout_id,
+        user_id: payout.user_id,
+        amount: Number(payout.amount ?? 0),
+        currency: payout.currency,
+        payment_method: payout.payment_method,
+        account_details: payout.account_details,
+        status: payout.status,
+        xendit_disbursement_id: payout.xendit_disbursement_id,
+        failure_code: payout.failure_code ?? null,
+        failure_message: payout.failure_message ?? null,
+        requested_at: payout.requested_at ? payout.requested_at.toISOString() : null,
+        completed_at: payout.completed_at ? payout.completed_at.toISOString() : null,
+        items,
+      },
+    };
+  }
+
+  
+
+   /**
+   * Request Payout
+   */
+  async requestPayout(userId: string, body: {
+    booking_ids: string[];
+    payment_method: string;
+    account_details: {
+      phone_number?: string;
+      account_holder_name?: string;
+      bank_code?: string;
+      account_number?: string;
+    };
+  }) {
+    const { booking_ids, payment_method, account_details } = body;
+
+    // 1. Get provider ID from user ID
+    const provider = await this.usersService.getProviderByUserId(userId);
+    if (!provider) {
+      throw new BadRequestException('Provider profile not found for this user');
+    }
+
+    // 2. Find escrow_accounts for the selected bookings
+    // Make sure they belong to this provider and are still available
+    const escrows = await this.escrowAccountRepository
+      .createQueryBuilder('e')
+      .where('e.booking_id IN (:...bookingIds)', { bookingIds: booking_ids })
+      .andWhere('e.provider_id = :providerId', { providerId: provider.id })
+      .andWhere('e.payout_id IS NULL')
+      .andWhere("e.disbursement_status = 'PENDING'")
+      .getMany();
+
+    if (escrows.length === 0) {
+      throw new BadRequestException('No available escrows found for the selected bookings');
+    }
+
+    // 3. Calculate total amount
+    const totalAmount = escrows.reduce((sum, e) => sum + Number(e.provider_amount ?? 0), 0);
+
+    // 4. Create payout record in DB
+    const payoutId = `PO-${Date.now()}`;
+    const payout = this.payoutRepository.create({
+      payout_id: payoutId,
+      user_id: userId,
+      amount: totalAmount,
+      currency: 'PHP',
+      payment_method,
+      account_details,
+      status: 'PROCESSING',
+    });
+    await this.payoutRepository.save(payout);
+
+    // 5. Link escrows to this payout — so they can't be claimed twice
+    for (const escrow of escrows) {
+      escrow.payout_id = payoutId;
+      await this.escrowAccountRepository.save(escrow);
+    }
+
+    // 6. Call Xendit Payout API
+    const channelCode = payment_method.toUpperCase() === 'GCASH' ? 'PH_GCASH' : payment_method.toUpperCase();
+    const accountNumber = account_details.phone_number ?? account_details.account_number ?? '';
+    const accountHolderName = account_details.account_holder_name ?? '';
+
+    try {
+      const xenditResponse = await this.xenditApiClient.createPayout({
+        reference_id: payoutId,
+        channel_code: channelCode,
+        channel_properties: {
+          account_number: accountNumber,
+          account_holder_name: accountHolderName,
+        },
+        amount: totalAmount,
+        currency: 'PHP',
+        description: `GigMarket payout for ${escrows.length} booking(s)`,
+      });
+
+      // 7. Save Xendit disbursement ID back to payout
+      payout.xendit_disbursement_id = xenditResponse.id;
+      await this.payoutRepository.save(payout);
+
+      // 8. Create disbursement records
+      for (const escrow of escrows) {
+        const disbursement = this.disbursementRepository.create({
+          disbursement_id: `DISB-${escrow.escrow_id}-${Date.now()}`,
+          escrow_id: escrow.escrow_id,
+          provider_id: provider.id,
+          payout_id: payoutId,
+          xendit_disbursement_id: xenditResponse.id,
+          external_id: escrow.escrow_id,
+          amount: Number(escrow.provider_amount ?? 0),
+          currency: 'PHP',
+          ewallet_type: payment_method.toUpperCase() === 'GCASH' ? 'GCASH' : null,
+          phone_number: account_details.phone_number ?? null,
+          account_number: account_details.account_number ?? null,
+          account_holder_name: accountHolderName,
+          status: 'PENDING',
+        });
+        await this.disbursementRepository.save(disbursement);
+      }
+
+      return {
+        success: true,
+        data: {
+          payout_id: payoutId,
+          amount: totalAmount,
+          booking_count: escrows.length,
+          status: 'PROCESSING',
+          xendit_disbursement_id: xenditResponse.id,
+          estimated_completion: '1-2 business days',
+        },
+      };
+    } catch (error: any) {
+      // If Xendit fails, rollback — unlink escrows from payout
+      for (const escrow of escrows) {
+        escrow.payout_id = null;
+        await this.escrowAccountRepository.save(escrow);
+      }
+      payout.status = 'FAILED';
+      await this.payoutRepository.save(payout);
+
+      throw new BadRequestException(
+        `Payout failed: ${error?.response?.data?.message ?? error.message}`,
+      );
+    }
   }
 
   /**
