@@ -16,9 +16,10 @@ export const XENDIT_PAYMENT_METHODS: Record<string, XenditChannelConfig> = {
     requires_redirect: true,
     requires_card_details: false,
     channel_properties: (data) => ({
-      success_redirect_url: data.return_url + '?status=success',
-      failure_redirect_url: data.return_url + '?status=failed',
-      cancel_redirect_url: data.return_url + '?status=cancelled',
+      success_return_url: data.return_url + '?status=success',
+      failure_return_url: data.return_url + '?status=failed',
+      cancel_return_url: data.return_url + '?status=cancelled',
+      // redirect -> return_url 
     }),
   },
 
@@ -27,9 +28,10 @@ export const XENDIT_PAYMENT_METHODS: Record<string, XenditChannelConfig> = {
     requires_redirect: true,
     requires_card_details: false,
     channel_properties: (data) => ({
-      success_redirect_url: data.return_url + '?status=success',
-      failure_redirect_url: data.return_url + '?status=failed',
-      cancel_redirect_url: data.return_url + '?status=cancelled',
+      success_return_url: data.return_url + '?status=success',
+      failure_return_url: data.return_url + '?status=failed',
+      cancel_return_url: data.return_url + '?status=cancelled',
+      // redirect -> return_url
     }),
   },
 
@@ -50,12 +52,13 @@ export const XENDIT_PAYMENT_METHODS: Record<string, XenditChannelConfig> = {
   // Bank Transfer (InstaPay)
   // ============================================
   INSTAPAY: {
-    channel_code: 'PH_INSTAPAY',
+    channel_code: 'INSTAPAY',
     requires_redirect: true,
     requires_card_details: false,
     channel_properties: (data) => ({
-      success_redirect_url: data.return_url + '?status=success',
-      failure_redirect_url: data.return_url + '?status=failed',
+      success_return_url: data.return_url + '?status=success',
+      failure_return_url: data.return_url + '?status=failed',
+      // redirect -> return_url
     }),
   },
 
@@ -67,8 +70,9 @@ export const XENDIT_PAYMENT_METHODS: Record<string, XenditChannelConfig> = {
     requires_redirect: true,
     requires_card_details: true,
     channel_properties: (data) => ({
-      success_redirect_url: data.return_url + '?status=success',
-      failure_redirect_url: data.return_url + '?status=failed',
+      success_return_url: data.return_url + '?status=success',
+      failure_return_url: data.return_url + '?status=failed',
+      // redirect -> return_url
       
       // Card tokenization (3DS flow)
       card_information: {

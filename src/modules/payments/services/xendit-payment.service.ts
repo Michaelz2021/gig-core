@@ -13,23 +13,51 @@ import {
 import { PaymentSession } from '../entities/payment-session.entity';
 import { BookingsService } from '../../bookings/bookings.service';
 import { UsersService } from '../../users/users.service';
+import { XenditApiClient } from './xendit-api.client';
 
 /** Xendit API 호출 타임아웃 (ms). 이 시간 내 응답 없으면 504 반환 */
 const XENDIT_REQUEST_TIMEOUT_MS = 18_000;
 /** processPayment 전체 타임아웃(ms). DB 또는 Xendit 지연 시 무한 로딩 방지 */
 const PROCESS_PAYMENT_TOTAL_TIMEOUT_MS = 20_000;
-
+/** Please look at these errors:
+ * [Nest] 78519  - 03/12/2026, 3:45:37 PM   ERROR [XenditPaymentService] Xendit full error: {
+  "response": {
+    "error_code": "API_VALIDATION_ERROR",
+    "message": "Only one of 'payment_method' or 'payment_method_id' should be present per request"
+  },
+  "name": "XenditSdkError",
+  "rawResponse": {
+    "error_code": "API_VALIDATION_ERROR",
+    "message": "Only one of 'payment_method' or 'payment_method_id' should be present per request"
+  },
+  "status": 400,
+  "errorCode": "API_VALIDATION_ERROR",
+  "errorMessage": "Only one of 'payment_method' or 'payment_method_id' should be present per request"
+}
+[Nest] 78519  - 03/12/2026, 3:45:37 PM   ERROR [LoggingInterceptor] Request Failed: POST /api/v1/payment/xenditprocess - Xendit payment creation failed: [Xendit SDK Error] 400 Bad Request - 493ms
+BadRequestException: Xendit payment creation failed: [Xendit SDK Error] 400 Bad Request
+    at XenditPaymentService.runProcessPayment (/var/www/gigMarket/gig-core/src/modules/payments/services/xendit-payment.service.ts:156:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at XenditPaymentService.processPayment (/var/www/gigMarket/gig-core/src/modules/payments/services/xendit-payment.service.ts:65:14)
+    at PaymentsService.xenditProcess (/var/www/gigMarket/gig-core/src/modules/payments/payments.service.ts:538:17)
+This is the error we have therefore, were going to use xendit-api.client.ts since it will allow us
+to use a different method of calling the API that doesn't have this issue. 
+The error is related to the way the Xendit SDK is being used, and switching to direct API 
+calls with a custom client should help us avoid this problem and have more control over the request payload.
+ * 
+ */
 @Injectable()
 export class XenditPaymentService {
   private xendit: any;
   private readonly logger = new Logger(XenditPaymentService.name);
-
+  
   constructor(
     private configService: ConfigService,
     @InjectRepository(PaymentSession)
     private paymentSessionRepository: Repository<PaymentSession>,
     private bookingsService: BookingsService,
     private usersService: UsersService,
+    private xenditApiClient: XenditApiClient, // I added this
   ) {
     const secretKey = this.configService.get<string>('XENDIT_SECRET_KEY');
     if (!secretKey || typeof secretKey !== 'string' || secretKey.trim() === '') {
@@ -129,9 +157,10 @@ export class XenditPaymentService {
 
     // 6. Call Xendit API (https://api.xendit.co) — 별도 타임아웃
     this.logger.log('Calling Xendit API (createPaymentRequest)...');
-    const xenditCall = this.xendit.PaymentRequest.createPaymentRequest({
-      data: xenditRequest,
-    });
+    // const xenditCall = this.xendit.PaymentRequest.createPaymentRequest({
+    //   data: xenditRequest,
+    // }); -> replace this and use the current xendit-api.client.ts
+    const xenditCall = this.xenditApiClient.createPaymentRequest(xenditRequest);
     const xenditTimeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(
         () => reject(new Error('Xendit API request timed out')),
@@ -144,6 +173,7 @@ export class XenditPaymentService {
       xenditResponse = await Promise.race([xenditCall, xenditTimeoutPromise]);
       this.logger.log('Xendit API responded successfully');
     } catch (error: any) {
+      this.logger.error('Xendit full error: ' + JSON.stringify(error?.response?.data ?? error, null, 2));
       if (error?.message === 'Xendit API request timed out') {
         this.logger.warn(
           'Xendit API timeout - no response within ' + XENDIT_REQUEST_TIMEOUT_MS / 1000 + 's',
@@ -153,6 +183,7 @@ export class XenditPaymentService {
         );
       }
       throw new BadRequestException(
+        
         `Xendit payment creation failed: ${error?.message ?? error}`,
       );
     }
@@ -203,16 +234,22 @@ export class XenditPaymentService {
 
     const baseRequest = {
       reference_id: bookingNumber,
-      type: 'PAY',
+      type: 'PAY' as const, // add as const
       country: 'PH',
       currency: 'PHP',
       channel_code: methodConfig.channel_code,
-      request_amount: session.total_amount,
-      capture_method: 'AUTOMATIC',
-
+      request_amount: Number(session.total_amount), // Because it turns into a string: "request_amount":"1050.00"
+      capture_method: 'AUTOMATIC' as const, // add as const
+      // Explanation: TypeScript thinks: 'PAY' exactly and not as a string
       customer: {
-        type: 'INDIVIDUAL',
+        type: 'INDIVIDUAL' as const, // add as const
         reference_id: bookingNumber,
+        individual_detail: { // reason: Error shows that it is missing individual_detail for INDIVIDUAL type
+          given_names: consumerName || 'GigMarket User~',
+          email: consumerEmail,
+          mobile_number: consumerPhone,
+        },
+        
         email: consumerEmail,
         mobile_number: consumerPhone,
       },
@@ -246,9 +283,15 @@ export class XenditPaymentService {
   private extractPaymentUrl(xenditResponse: any): string | null {
     // Xendit returns actions array with URLs
     const action = xenditResponse.actions?.find(
-      (a: any) => a.action === 'AUTH' || a.action === 'VIEW'
+      (a: any) => a.type === 'REDIRECT_CUSTOMER' || a.action === 'AUTH' || a.action === 'VIEW'
+      // Xendit have list of "actions" - for redirect payments like Gcash and Paymaya, in which the previous 
+      // code doesn't have, that is why payment_url is empty
+      // we look for that action by checking if it's 'REDIRECT_CUSTOMER'
+      // OR 'AUTH/VIEW' (added them for fallback), then grab the url from either value or url field 
+      // (Xendit can use different field names in different cases, which in some cases isn't consistent)
     );
-    return action?.url || null;
+    return action?.value ?? action?.url ?? null;
+    // added this so it will display the url
   }
 
   /**
@@ -256,9 +299,9 @@ export class XenditPaymentService {
    */
   private extractQrCode(xenditResponse: any): string | null {
     const qrAction = xenditResponse.actions?.find(
-      (a: any) => a.action === 'QR_CHECKOUT'
-    );
-    return qrAction?.qr_code || null;
+      (a: any) => a.type === 'PRESENT_TO_CUSTOMER' && a.descriptor === 'QR_STRING'
+    ); // show thy QR_STRING in which the mobile will convert it into qr code (image?)
+    return qrAction?.value ?? qrAction?.qr_code ?? null;
   }
 
   /**
