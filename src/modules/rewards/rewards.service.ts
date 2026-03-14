@@ -353,12 +353,16 @@ export class RewardsService {
     }
 
     // 관련 booking_number 가 있으면 UUID id 로 변환 + provider 정보 조회 (service reward 전용)
+    // reason 이 Advertise/Adervertise 인 경우 relatedBookingNumber 없이 사용(광고 등) → 조회 생략
     let relatedBookingId: string | undefined;
     let providerUserId: string | undefined;
-    if (relatedBookingNumber) {
-      const booking = await this.bookingsService.findOneByBookingNumber(relatedBookingNumber);
+    const reasonNorm = (reason ?? '').trim().toLowerCase();
+    const isAdvertiseReason = reasonNorm === 'advertise' || reasonNorm === 'adervertise';
+    const effectiveBookingNumber =
+      relatedBookingNumber && !isAdvertiseReason ? relatedBookingNumber.trim() : undefined;
+    if (effectiveBookingNumber && effectiveBookingNumber.length > 0) {
+      const booking = await this.bookingsService.findOneByBookingNumber(effectiveBookingNumber);
       relatedBookingId = booking.id;
-      // bookings.providerId 는 providers.userId 를 가리키므로, 곧 provider의 userId
       providerUserId = booking.providerId;
     }
 
