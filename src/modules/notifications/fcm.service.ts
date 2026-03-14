@@ -102,7 +102,9 @@ export class FcmService implements OnModuleInit {
         },
         data: notification.data
           ? Object.keys(notification.data).reduce((acc, key) => {
-              acc[key] = String(notification.data![key]);
+              const v = notification.data![key];
+              acc[key] =
+                typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v ?? '');
               return acc;
             }, {} as Record<string, string>)
           : undefined,

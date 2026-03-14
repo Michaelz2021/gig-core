@@ -6,6 +6,7 @@ import { Booking } from './entities/booking.entity';
 import { Contract } from './entities/contract.entity';
 import { SmartContract } from './entities/smart-contract.entity';
 import { WorkProgressReport } from './entities/work-progress-report.entity';
+import { LiveUpdateImage } from './entities/live-update-image.entity';
 import { Quote } from '../quotes/entities/quote.entity';
 import { Auction } from '../matching/entities/auction.entity';
 import { ServicesModule } from '../services/services.module';
@@ -13,7 +14,7 @@ import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Booking, Contract, SmartContract, WorkProgressReport, Quote, Auction]),
+    TypeOrmModule.forFeature([Booking, Contract, SmartContract, WorkProgressReport, LiveUpdateImage, Quote, Auction]),
     ServicesModule,
     UsersModule,
   ],

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Service } from './entities/service.entity';
 import { ServiceCategory } from './entities/service-category.entity';
+import { ServiceTaskTemplate } from './entities/service-task-template.entity';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { SearchServiceDto } from './dto/search-service.dto';
 import { CreateServiceCategoryDto } from './dto/create-service-category.dto';
@@ -14,6 +15,8 @@ export class ServicesService {
     private readonly serviceRepository: Repository<Service>,
     @InjectRepository(ServiceCategory)
     private readonly categoryRepository: Repository<ServiceCategory>,
+    @InjectRepository(ServiceTaskTemplate)
+    private readonly taskTemplateRepository: Repository<ServiceTaskTemplate>,
   ) {}
 
   async create(providerId: string, createServiceDto: CreateServiceDto): Promise<Service> {
@@ -226,5 +229,42 @@ export class ServicesService {
       [level],
     );
     return categories;
+  }
+
+  /** 카테고리 ID로 service_type 반환 (HOME, EVENTS, FREELANCE, PERSONAL). 없으면 'HOME' */
+  async getServiceTypeByCategoryId(categoryId: string): Promise<string> {
+    const category = await this.categoryRepository.findOne({
+      where: { id: categoryId },
+      select: ['serviceType'],
+    });
+    const t = (category?.serviceType ?? '').trim().toUpperCase();
+    if (['HOME', 'EVENTS', 'FREELANCE', 'PERSONAL'].includes(t)) {
+      return t;
+    }
+    return 'HOME';
+  }
+
+  /** service_type별 템플릿 목록 (phase, task_seq 순) */
+  async findTemplatesByServiceType(serviceType: string): Promise<ServiceTaskTemplate[]> {
+    return this.taskTemplateRepository.find({
+      where: { serviceType: serviceType.toUpperCase() },
+      order: { phase: 'ASC', taskSeq: 'ASC' },
+    });
+  }
+
+  /** service_type + actor 조건으로 task_code 목록만 반환 (드롭다운 등용) */
+  async findTaskCodesByServiceTypeAndActor(
+    serviceType: string,
+    actor: string = 'PROVIDER',
+  ): Promise<string[]> {
+    const rows = await this.taskTemplateRepository.find({
+      where: {
+        serviceType: serviceType.toUpperCase(),
+        actor: actor.toUpperCase(),
+      },
+      order: { phase: 'ASC', taskSeq: 'ASC' },
+      select: ['taskCode'],
+    });
+    return rows.map((r) => r.taskCode);
   }
 }

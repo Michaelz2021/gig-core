@@ -46,7 +46,7 @@ export class InstantBookingsController {
           user_id: '123e4567-e89b-12d3-a456-426614174000',
           service_category: 'a98a4eb5-4b1e-4851-99c6-f92806ae5f61',
           time_slot: '2024-07-01T14:00:00Z',
-          location: { address: '123 Main St, Anytown, USA', lat: 37.7749, lng: -122.4194 },
+          location: { option: 'home', address: '123 Main St, Anytown, USA', lat: 37.7749, lng: -122.4194 },
         },
       },
       camelCase: {
@@ -55,7 +55,7 @@ export class InstantBookingsController {
           userId: '123e4567-e89b-12d3-a456-426614174000',
           serviceCategoryId: 'a98a4eb5-4b1e-4851-99c6-f92806ae5f61',
           timeSlot: '2024-07-01T14:00:00Z',
-          location: { address: '123 Main St, Anytown, USA', lat: 37.7749, lng: -122.4194 },
+          location: { option: 'site', address: '123 Main St, Anytown, USA', lat: 37.7749, lng: -122.4194 },
         },
       },
     },

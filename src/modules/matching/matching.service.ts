@@ -11,6 +11,7 @@ import { AuctionBid, AuctionBidStatus } from './entities/auction-bid.entity';
 import { AIQuotationSession, QuotationSessionStatus } from './entities/ai-quotation-session.entity';
 import { CreateAuctionDto } from './dto/create-auction.dto';
 import { CreateAuctionBidDto } from './dto/create-auction-bid.dto';
+import { UpdateAuctionBidDto } from './dto/update-auction-bid.dto';
 import { CreateQuotationSessionDto } from './dto/create-quotation-session.dto';
 import { AddMessageToSessionDto } from './dto/add-message-to-session.dto';
 
@@ -446,6 +447,39 @@ export class MatchingService {
       throw new NotFoundException(`Bid with ID ${id} not found`);
     }
     return bid;
+  }
+
+  /** 입찰 내용 수정. 본인 입찰이며 status가 submitted일 때만 가능. */
+  async updateBid(bidId: string, userId: string, dto: UpdateAuctionBidDto): Promise<AuctionBid> {
+    const provider = await this.usersService.getProviderByUserId(userId);
+    if (!provider) {
+      throw new BadRequestException('Provider profile not found.');
+    }
+    const bid = await this.auctionBidRepository.findOne({
+      where: { id: bidId },
+      relations: ['auction'],
+    });
+    if (!bid) {
+      throw new NotFoundException(`Bid with ID ${bidId} not found`);
+    }
+    if (bid.providerId !== provider.id) {
+      throw new BadRequestException('You can only update your own bid.');
+    }
+    if (bid.status !== AuctionBidStatus.SUBMITTED) {
+      throw new BadRequestException(`Bid cannot be updated when status is ${bid.status}. Only submitted bids can be edited.`);
+    }
+    if (dto.proposedPrice != null) bid.proposedPrice = Number(dto.proposedPrice);
+    if (dto.estimatedDuration != null) bid.estimatedDuration = Number(dto.estimatedDuration);
+    if (dto.workPlan !== undefined) bid.workPlan = dto.workPlan ?? null;
+    if (dto.portfolioItems !== undefined) bid.portfolioItems = dto.portfolioItems ?? null;
+    if (dto.proposedStartDate !== undefined) {
+      bid.proposedStartDate = dto.proposedStartDate ? new Date(dto.proposedStartDate) : null;
+    }
+    if (dto.proposedCompletionDate !== undefined) {
+      bid.proposedCompletionDate = dto.proposedCompletionDate ? new Date(dto.proposedCompletionDate) : null;
+    }
+    if (dto.additionalComment !== undefined) bid.additionalComment = dto.additionalComment ?? null;
+    return this.auctionBidRepository.save(bid);
   }
 
   async updateBidStatus(bidId: string, status: AuctionBidStatus, reason?: string): Promise<AuctionBid> {

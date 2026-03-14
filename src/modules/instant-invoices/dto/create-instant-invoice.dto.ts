@@ -42,6 +42,25 @@ export class CreateInstantInvoiceDto {
   @IsString()
   service_address: string;
 
+  @ApiProperty({ example: 'Home', enum: ['Home', 'On Site'], description: '서비스 장소 옵션' })
+  @IsIn(['Home', 'On Site'])
+  service_address_option: 'Home' | 'On Site';
+
+  @ApiPropertyOptional({ description: '미입력 시 listing_id로 조회한 리스팅명으로 채움' })
+  @IsOptional()
+  @IsString()
+  listing_name?: string;
+
+  @ApiPropertyOptional({ description: '미입력 시 consumer_id(유저) 기준 표시명으로 채움' })
+  @IsOptional()
+  @IsString()
+  consumer_name?: string;
+
+  @ApiPropertyOptional({ description: '미입력 시 provider_id 기준 표시명으로 채움' })
+  @IsOptional()
+  @IsString()
+  provider_name?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)

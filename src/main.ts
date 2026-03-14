@@ -11,21 +11,104 @@ import { join } from 'path';
 import * as express from 'express';
 
 /**
- * JSON 파싱 시 흔한 오류(trailing comma, 값 끝 따옴표 중복 등)를 보정하여 파싱.
- * Swagger/클라이언트에서 "Expected ',' or '}' after property value" 400 방지.
+ * JSON 파싱 시 흔한 오류(trailing comma, 값 끝 따옴표 중복, 제어문자 등)를 보정하여 파싱.
+ * Swagger/HTML 클라이언트에서 "Expected ',' or '}' after property value" 400 방지.
  */
 function parseJsonLenient(raw: string): any {
   let s = raw.replace(/^\uFEFF/, ''); // BOM 제거
-  // 값 끝 따옴표 중복 보정: "PSESS-xxx""  -> "PSESS-xxx"  (한 줄: "" 뒤에 , } ] / 여러 줄: "" 뒤에 줄바꿈 후 ")
+  // 제어문자 제거 (JSON에서 문자열 밖에 있으면 문법 오류 유발; \t \n \r 제외)
+  s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ');
+  // 스마트/컬리 따옴표를 일반 따옴표로
+  s = s.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+  // 값 끝 따옴표 중복 보정: "PSESS-xxx""  -> "PSESS-xxx"
   s = s.replace(/""(\s*)([,}\]])/g, '"$1$2');
-  s = s.replace(/""(\s*)"/g, '"$1"'); // "" 다음에 오는 키 시작 따옴표
+  s = s.replace(/""(\s*)"/g, '"$1"');
+  // trailing comma 제거: , } 또는 , ] 앞의 쉼표 제거
+  s = s.replace(/,(\s*[}\]])/g, '$1');
+  // 누락된 쉼표 보정: ]" 또는 }" (배열/객체 끝 바로 다음 키) → ]," / },"
+  s = s.replace(/\]\s*"/g, '],"').replace(/\}\s*"/g, '},"');
+  // 배열/객체 앞의 불필요한 쉼표: [ , { , 제거
+  s = s.replace(/\[\s*,/g, '[').replace(/\{\s*,/g, '{');
+  // 값 누락 보정: ":," / ":}" / ":]" / ": 줄바꿈" → ":null..."
+  s = s.replace(/:\s*,/g, ':null,').replace(/:\s*}/g, ':null}').replace(/:\s*]/g, ':null]');
+  s = s.replace(/:\s*[\r\n]+/g, ':null$&');
+  // 단일 따옴표 불리언 (HTML/폼에서 올 수 있음): 'true'/'false' → true/false
+  s = s.replace(/:(\s*)'true'(\s*)/g, '$1true$2').replace(/:(\s*)'false'(\s*)/g, '$1false$2');
+  // Python/JS 스타일 대문자 불리언·null 보정: True->true, False->false, None->null, Null->null
+  s = s.replace(/:(\s*)True\b/g, '$1true').replace(/:(\s*)False\b/g, '$1false');
+  s = s.replace(/:(\s*)None\b/g, '$1null').replace(/:(\s*)Null\b/g, '$1null');
+  let firstError: Error | null = null;
   try {
     return JSON.parse(s);
-  } catch {
-    // trailing comma 제거: , } 또는 , ] 앞의 쉼표 제거
-    const fixed = s.replace(/,(\s*[}\]])/g, '$1');
-    return JSON.parse(fixed);
+  } catch (e) {
+    firstError = e instanceof Error ? e : new Error(String(e));
   }
+  // 문자열 안의 미이스케이프 줄바꿈 보정 후 재시도
+  const stringFix = s.replace(/"((?:[^"\\]|\\.)*)"/g, (_, content: string) =>
+    '"' + content.replace(/\r\n/g, '\\n').replace(/\n/g, '\\n').replace(/\r/g, '\\n') + '"',
+  );
+  try {
+    return JSON.parse(stringFix);
+  } catch {
+    // 두 번 다 실패 시 원래 파싱 에러(위치 정보 포함)를 다시 던져 로그/디버깅에 활용
+    throw firstError ?? new Error('JSON parse failed after lenient fixes');
+  }
+}
+
+/** 파싱 실패한 raw에서 temp_provider 필드만 정규식으로 추출. 필수 필드 없으면 placeholder 적용. */
+function extractTempProviderFromMalformedJson(raw: string): Record<string, unknown> {
+  const s = raw.replace(/^\uFEFF/, '');
+  const str = (key: string) => {
+    const re = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`, 'g');
+    const m = re.exec(s);
+    return m ? m[1].replace(/\\"/g, '"').trim() : undefined;
+  };
+  const num = (key: string) => {
+    const m = new RegExp(`"${key}"\\s*:\\s*(-?\\d+)`).exec(s);
+    return m ? parseInt(m[1], 10) : undefined;
+  };
+  const bool = (key: string) => {
+    const m = new RegExp(`"${key}"\\s*:\\s*(true|false|True|False)`).exec(s);
+    if (!m) return undefined;
+    return m[1].toLowerCase() === 'true';
+  };
+  const strArray = (key: string): string[] | undefined => {
+    const re = new RegExp(`"${key}"\\s*:\\s*\\[(.*?)\\]`, 's');
+    const m = re.exec(s);
+    if (!m) return undefined;
+    const inner = m[1].trim();
+    if (!inner) return [];
+    const parts = inner.match(/"([^"]*)"/g);
+    return parts ? parts.map((p) => p.slice(1, -1)) : [];
+  };
+  const email = str('email') || str('Email') || '';
+  const phone = str('phone') || str('Phone') || '';
+  const firstName = str('firstName') || str('first_name') || '';
+  const lastName = str('lastName') || str('last_name') || '';
+  return {
+    email: email && /@/.test(email) ? email : (email || 'salvaged-unknown@temp.local'),
+    phone: phone || 'salvaged',
+    firstName: firstName || 'Unknown',
+    lastName: lastName || 'Salvaged',
+    profilePhotoUrl: str('profilePhotoUrl') || str('profile_photo_url'),
+    address: undefined,
+    businessType: str('businessType') || str('business_type'),
+    businessName: str('businessName') || str('business_name'),
+    serviceCategories: strArray('serviceCategories') || strArray('service_categories') || [],
+    preferServiceAreas: strArray('preferServiceAreas') || strArray('prefer_service_areas') || [],
+    vatable: bool('vatable') ?? false,
+    tinNumber: str('tinNumber') || str('tin_number'),
+    yearsOfExperience: num('yearsOfExperience') ?? num('years_of_experience') ?? 0,
+    certifications: [],
+    portfolioPhotos: [],
+    instantBooking: bool('instantBooking') ?? bool('instant_booking') ?? true,
+    serviceRadiusKm: num('serviceRadiusKm') ?? num('service_radius_km') ?? 10,
+    responseTimeMinutes: num('responseTimeMinutes') ?? num('response_time_minutes'),
+    notificationPreferences: undefined,
+    availableDays: strArray('availableDays') || strArray('available_days'),
+    availableHoursStart: str('availableHoursStart') || str('available_hours_start'),
+    availableHoursEnd: str('availableHoursEnd') || str('available_hours_end'),
+  };
 }
 
 async function bootstrap() {
@@ -39,6 +122,31 @@ async function bootstrap() {
 
   const expressApp = app.getHttpAdapter().getInstance();
 
+  // CORS: 요청 출처 허용 + OPTIONS 200 (프론트엔드 www.gigmarket.ph 등에서 API 호출 허용)
+  const corsAllowedOrigins = [
+    'https://www.gigmarket.ph',
+    'http://www.gigmarket.ph',
+    'http://localhost:8080',
+    'http://localhost:5173',
+    'http://localhost:3000',
+  ];
+  const corsOriginFromEnv = configService.get<string>('CORS_ORIGIN', '');
+  if (corsOriginFromEnv) {
+    corsAllowedOrigins.push(...corsOriginFromEnv.split(',').map((o) => o.trim()).filter(Boolean));
+  }
+  expressApp.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const origin = req.headers.origin;
+    const allowOrigin =
+      origin && corsAllowedOrigins.includes(origin) ? origin : corsAllowedOrigins[0] || '*';
+    res.setHeader('Access-Control-Allow-Origin', allowOrigin);
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
   // application/json 요청: raw 수신 후 lenient 파싱 (trailing comma 등 허용)
   expressApp.use(
     express.raw({ type: 'application/json', limit: '10mb' }),
@@ -48,14 +156,34 @@ async function bootstrap() {
         try {
           (req as any).body = parseJsonLenient(str);
         } catch (e: any) {
+          const path = (req.path || '').split('?')[0];
+          const isTempRegister =
+            req.method === 'POST' && path.includes('temp_providers/register');
+          if (isTempRegister) {
+            try {
+              (req as any).body = extractTempProviderFromMalformedJson(str);
+              console.warn(
+                `[temp_providers/register] JSON parse failed; salvaged ${Object.keys((req as any).body).length} fields from raw body and continuing.`,
+              );
+              return next();
+            } catch (salvageErr) {
+              console.warn('[temp_providers/register] salvage failed', salvageErr);
+            }
+          }
           const posMatch = typeof e?.message === 'string' ? e.message.match(/position (\d+)/) : null;
           const pos = posMatch ? parseInt(posMatch[1], 10) : null;
+          const half = isTempRegister ? 80 : 30;
           const snippet = pos != null && str.length > 0
-            ? str.slice(Math.max(0, pos - 30), pos + 30).replace(/\n/g, '\\n')
+            ? str.slice(Math.max(0, pos - half), pos + half).replace(/\n/g, '\\n')
             : str.slice(0, 120).replace(/\n/g, '\\n');
           console.warn(
             `[JSON parse failed] path=${req.path} method=${req.method} message=${e?.message || e} snippet=...${snippet}...`,
           );
+          if (isTempRegister && pos != null && str.length > pos) {
+            const at = str[pos];
+            const around = str.slice(Math.max(0, pos - 5), pos + 6).replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+            console.warn(`[temp_providers/register] position ${pos} char="${at}" code=${str.charCodeAt(pos)} around=...${around}...`);
+          }
           next(e);
           return;
         }
@@ -84,6 +212,48 @@ async function bootstrap() {
         serviceCategoryId: b.serviceCategoryId ?? b.service_category,
         timeSlot: b.timeSlot ?? b.time_slot,
         location: b.location,
+      };
+    }
+    next();
+  });
+  // POST temp_providers/register: HTML/클라이언트에서 보내는 snake_case 또는 추가 필드를 camelCase로 정규화 (ValidationPipe 400 방지)
+  expressApp.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const path = (req.path || (req as any).url || '').split('?')[0];
+    if (
+      req.method === 'POST' &&
+      path.includes('temp_providers/register') &&
+      req.body &&
+      typeof req.body === 'object'
+    ) {
+      const b = req.body as Record<string, unknown>;
+      const pick = (camel: string, snake: string) => b[camel] ?? b[snake];
+      const nested = (key: string) => {
+        const val = b[key] ?? b[key.replace(/([A-Z])/g, '_$1').toLowerCase()];
+        return val;
+      };
+      req.body = {
+        email: pick('email', 'email'),
+        phone: pick('phone', 'phone'),
+        profilePhotoUrl: pick('profilePhotoUrl', 'profile_photo_url'),
+        firstName: pick('firstName', 'first_name'),
+        lastName: pick('lastName', 'last_name'),
+        address: nested('address'),
+        businessType: pick('businessType', 'business_type'),
+        businessName: pick('businessName', 'business_name'),
+        serviceCategories: pick('serviceCategories', 'service_categories'),
+        preferServiceAreas: pick('preferServiceAreas', 'prefer_service_areas'),
+        vatable: pick('vatable', 'vatable'),
+        tinNumber: pick('tinNumber', 'tin_number'),
+        yearsOfExperience: pick('yearsOfExperience', 'years_of_experience'),
+        certifications: nested('certifications'),
+        portfolioPhotos: nested('portfolioPhotos') ?? nested('portfolio_photos'),
+        instantBooking: pick('instantBooking', 'instant_booking'),
+        serviceRadiusKm: pick('serviceRadiusKm', 'service_radius_km'),
+        responseTimeMinutes: pick('responseTimeMinutes', 'response_time_minutes'),
+        notificationPreferences: nested('notificationPreferences') ?? nested('notification_preferences'),
+        availableDays: pick('availableDays', 'available_days'),
+        availableHoursStart: pick('availableHoursStart', 'available_hours_start'),
+        availableHoursEnd: pick('availableHoursEnd', 'available_hours_end'),
       };
     }
     next();

@@ -4,28 +4,27 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { S3Service } from './s3.service';
 import { ProviderAdUploadUrlRequestDto } from './dto/upload-url-request.dto';
 
-const IMAGE_PREFIX = 'portfolio/image/';
-const VIDEO_PREFIX = 'portfolio/video/';
+const PROJECTS_PREFIX = 'projects/';
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm'];
 
-@ApiTags('provider-ads')
-@Controller('provider-ads')
+@ApiTags('projects')
+@Controller('projects')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth('access-token')
-export class ProviderAdsUploadController {
+export class ProjectsUploadController {
   constructor(private readonly s3Service: S3Service) {}
 
   @Post('upload-url')
   @ApiOperation({
-    summary: 'Get upload URL for provider ad image/video',
+    summary: 'Get upload URL for project image/video',
     description:
-      'Send filename and contentType (JSON). Returns presigned uploadUrl (PUT file here) and public url (use in provider_ads).',
+      'Send filename and contentType (JSON). Returns presigned uploadUrl (PUT file here) and public url to store.',
   })
   @ApiBody({ type: ProviderAdUploadUrlRequestDto })
   @ApiResponse({
     status: 200,
-    description: 'Presigned uploadUrl (PUT file here) and final url to store in provider_ads',
+    description: 'Presigned uploadUrl and final url',
     schema: {
       type: 'object',
       properties: {
@@ -34,7 +33,7 @@ export class ProviderAdsUploadController {
           type: 'object',
           properties: {
             uploadUrl: { type: 'string', description: 'Presigned URL - PUT file here' },
-            url: { type: 'string', description: 'Public URL to store in provider_ads' },
+            url: { type: 'string', description: 'Public URL to store' },
           },
           required: ['uploadUrl', 'url'],
         },
@@ -56,9 +55,8 @@ export class ProviderAdsUploadController {
         `Unsupported contentType. Image: ${IMAGE_TYPES.join(', ')}. Video: ${VIDEO_TYPES.join(', ')}.`,
       );
     }
-    const prefix = isImage ? IMAGE_PREFIX : VIDEO_PREFIX;
     const safeName = `${Date.now()}_${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-    const key = `${prefix}${safeName}`;
+    const key = `${PROJECTS_PREFIX}${safeName}`;
     const { uploadUrl, publicUrl } = await this.s3Service.getPresignedPutUrl(key, contentType);
     return { success: true, data: { uploadUrl, url: publicUrl } };
   }

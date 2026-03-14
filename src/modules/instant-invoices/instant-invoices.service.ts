@@ -5,6 +5,7 @@ import { InstantInvoice } from './entities/instant-invoice.entity';
 import { Provider } from '../users/entities/provider.entity';
 import { CreateInstantInvoiceDto } from './dto/create-instant-invoice.dto';
 import { ListingsService } from '../listings/listings.service';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class InstantInvoicesService {
@@ -14,6 +15,7 @@ export class InstantInvoicesService {
     @InjectRepository(Provider)
     private readonly providerRepository: Repository<Provider>,
     private readonly listingsService: ListingsService,
+    private readonly usersService: UsersService,
   ) {}
 
   /**
@@ -26,18 +28,42 @@ export class InstantInvoicesService {
     payment_status: string;
     booking_status: string;
     created_at: Date;
+    listing_name?: string;
+    consumer_name?: string;
+    provider_name?: string;
+    service_address_option?: string;
   }> {
     const consumerId = dto.consumer_id ?? consumerIdFromJwt;
     if (consumerId !== consumerIdFromJwt) {
       throw new ForbiddenException('consumer_id must match the authenticated user');
     }
 
+    const listing = await this.listingsService.findOne(dto.listing_id);
     const providerId =
-      dto.provider_id ??
-      (await this.listingsService.findOne(dto.listing_id).then((l) => l?.providerId ?? null)) ??
-      '';
+      dto.provider_id ?? (listing as any)?.providerId ?? '';
     if (!providerId) {
       throw new BadRequestException('provider_id is required or listing must have a provider');
+    }
+
+    const listingName =
+      dto.listing_name ?? (listing?.title ?? null) ?? null;
+    let consumerName = dto.consumer_name ?? null;
+    if (consumerName == null) {
+      const user = await this.usersService.findOne(consumerId);
+      consumerName = user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || null : null;
+    }
+    let providerName = dto.provider_name ?? null;
+    if (providerName == null) {
+      const provider = await this.providerRepository.findOne({
+        where: { id: providerId },
+        relations: ['user'],
+      });
+      if (provider) {
+        const u = provider.user;
+        const userDisplayName = u ? `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() : '';
+        providerName =
+          (provider.businessName && provider.businessName.trim()) || userDisplayName || null;
+      }
     }
 
     // 앱의 provider_id = providers.id (UUID) 그대로 매핑
@@ -45,10 +71,14 @@ export class InstantInvoicesService {
       listingId: dto.listing_id,
       consumerId,
       providerId: String(providerId),
+      listingName: listingName || null,
+      consumerName: consumerName || null,
+      providerName: providerName || null,
       instantBookingId: dto.instant_booking_id,
       serviceDate: dto.service_date,
       serviceTime: dto.service_time,
       serviceAddress: dto.service_address,
+      serviceAddressOption: dto.service_address_option ?? null,
       serviceLat: dto.service_lat != null ? String(dto.service_lat) : null,
       serviceLng: dto.service_lng != null ? String(dto.service_lng) : null,
       priceType: dto.price_type,
@@ -80,6 +110,10 @@ export class InstantInvoicesService {
       payment_status: saved.paymentStatus,
       booking_status: saved.bookingStatus,
       created_at: saved.createdAt,
+      listing_name: saved.listingName ?? undefined,
+      consumer_name: saved.consumerName ?? undefined,
+      provider_name: saved.providerName ?? undefined,
+      service_address_option: saved.serviceAddressOption ?? undefined,
     };
   }
 
@@ -87,25 +121,36 @@ export class InstantInvoicesService {
     return this.instantInvoiceRepository.findOne({ where: { id } });
   }
 
+  /** instant_booking_id로 인보이스 1건 조회 (결제 초기화 등에서 사용) */
+  async findOneByInstantBookingId(instantBookingId: string): Promise<InstantInvoice | null> {
+    return this.instantInvoiceRepository.findOne({ where: { instantBookingId } });
+  }
+
   /**
-   * JWT user_id 기준: consumer_id = user_id 이거나, provider_id가 해당 user의 providers.id인 인보이스만 조회.
-   * 최신순 정렬.
+   * user_type에 따라 consumer_id 또는 provider_id로 인보이스 목록 조회. 최신순.
+   * @param userId JWT user id
+   * @param userType 'consumer' → consumer_id = userId, 'provider' → provider_id = (해당 user의 providers.id)
    */
-  async findAllByUserId(userId: string): Promise<InstantInvoice[]> {
+  async findAllByUserAndType(
+    userId: string,
+    userType: 'consumer' | 'provider',
+  ): Promise<InstantInvoice[]> {
+    if (userType === 'consumer') {
+      return this.instantInvoiceRepository.find({
+        where: { consumerId: userId },
+        order: { createdAt: 'DESC' },
+      });
+    }
     const provider = await this.providerRepository.findOne({
       where: { userId },
       select: ['id'],
     });
-    const providerId = provider?.id ?? null;
-
-    const qb = this.instantInvoiceRepository
-      .createQueryBuilder('inv')
-      .where('inv.consumer_id = :userId', { userId });
-    if (providerId) {
-      qb.orWhere('inv.provider_id = :providerId', { providerId });
+    if (!provider) {
+      return [];
     }
-    qb.orderBy('inv.created_at', 'DESC');
-
-    return qb.getMany();
+    return this.instantInvoiceRepository.find({
+      where: { providerId: provider.id },
+      order: { createdAt: 'DESC' },
+    });
   }
 }

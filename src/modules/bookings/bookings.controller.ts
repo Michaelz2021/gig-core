@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards, Query, Req } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, Query, Req } from '@nestjs/common';
 import { ApiOkResponse, ApiTags, ApiOperation, ApiBearerAuth, ApiParam, ApiQuery, ApiBody, ApiBadRequestResponse, ApiForbiddenResponse, ApiNotFoundResponse } from '@nestjs/swagger';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
@@ -7,6 +7,8 @@ import { CreateSmartContractDto } from './dto/create-smart-contract.dto';
 import { SignContractDto } from './dto/sign-contract.dto';
 import { WorkProgressReportsResponseDto, WorkProgressReportResponseDto } from './dto/work-progress-report-response.dto';
 import { CreateWorkProgressReportDto } from './dto/create-work-progress-report.dto';
+import { CreateLiveUpdateImageDto } from './dto/create-live-update-image.dto';
+import { LiveUpdateImageResponseDto } from './dto/live-update-image-response.dto';
 import { ProjectOrderStatsDto } from './dto/project-order-stats.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
@@ -48,6 +50,49 @@ export class BookingsController {
   @ApiOkResponse({ description: 'Project order stats', type: ProjectOrderStatsDto })
   getProjectOrderStats(@GetUser() user: any, @Query('role') role?: 'consumer' | 'provider') {
     return this.bookingsService.getProjectOrderStats(user.id, role);
+  }
+
+  @Get('task-codes')
+  @ApiOperation({
+    summary: 'Get task codes for work report dropdown',
+    description:
+      'service_task_templates에서 service_type과 actor(PROVIDER)로 필터한 task_code 목록. Flutter 워크 보고서 작성 시 드롭다운 옵션용.',
+  })
+  @ApiQuery({
+    name: 'service_type',
+    required: true,
+    enum: ['HOME', 'EVENTS', 'FREELANCE', 'PERSONAL'],
+    description: '서비스 유형',
+  })
+  @ApiQuery({
+    name: 'actor',
+    required: false,
+    enum: ['PROVIDER', 'CONSUMER', 'BOTH', 'SYSTEM'],
+    description: '기본값: PROVIDER',
+  })
+  @ApiOkResponse({
+    description: 'task_code 문자열 배열',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        data: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['PROVIDER_DEPART', 'ARRIVE_PHOTO', 'WORK_START_CONFIRM', 'WORK_DONE_PHOTO'],
+        },
+      },
+    },
+  })
+  async getTaskCodes(
+    @Query('service_type') serviceType: string,
+    @Query('actor') actor?: string,
+  ) {
+    const list = await this.bookingsService.getTaskCodesForDropdown(
+      serviceType || 'HOME',
+      actor || 'PROVIDER',
+    );
+    return { success: true, data: list };
   }
 
   // Reports endpoints - must be defined BEFORE :bookingId route to ensure proper matching
@@ -189,6 +234,84 @@ export class BookingsController {
       success: true,
       data: reports,
     };
+  }
+
+  // Live Updates 이미지 (GET / POST / DELETE)
+  @Get(':bookingId/live-updates')
+  @ApiOperation({
+    summary: 'Get live update images for a booking',
+    description: 'Returns all live update image URLs for the booking (consumer or provider).',
+    operationId: 'getLiveUpdateImages',
+  })
+  @ApiParam({ name: 'bookingId', type: 'string', format: 'uuid', description: 'Booking ID' })
+  @ApiOkResponse({
+    description: 'Live update images returned',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        data: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              bookingId: { type: 'string', format: 'uuid' },
+              imageUrl: { type: 'string' },
+              createdAt: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiNotFoundResponse({ description: 'Booking not found' })
+  async getLiveUpdateImages(@Param('bookingId') bookingId: string) {
+    const images = await this.bookingsService.findAllLiveUpdateImages(bookingId);
+    return { success: true, data: images };
+  }
+
+  @Post(':bookingId/live-updates')
+  @ApiOperation({
+    summary: 'Add live update image',
+    description: 'Provider only. Add an image URL (e.g. from S3 after projects/upload-url). Booking must be confirmed or in_progress.',
+    operationId: 'createLiveUpdateImage',
+  })
+  @ApiParam({ name: 'bookingId', type: 'string', format: 'uuid', description: 'Booking ID' })
+  @ApiBody({ type: CreateLiveUpdateImageDto })
+  @ApiOkResponse({
+    description: 'Live update image created',
+    type: LiveUpdateImageResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid booking status' })
+  @ApiForbiddenResponse({ description: 'Only provider can add live update images' })
+  @ApiNotFoundResponse({ description: 'Booking not found' })
+  async createLiveUpdateImage(
+    @GetUser() user: any,
+    @Param('bookingId') bookingId: string,
+    @Body() dto: CreateLiveUpdateImageDto,
+  ) {
+    return this.bookingsService.createLiveUpdateImage(bookingId, user.id, dto);
+  }
+
+  @Delete(':bookingId/live-updates/:imageId')
+  @ApiOperation({
+    summary: 'Delete live update image',
+    description: 'Provider only. Delete one live update image by ID.',
+    operationId: 'deleteLiveUpdateImage',
+  })
+  @ApiParam({ name: 'bookingId', type: 'string', format: 'uuid', description: 'Booking ID' })
+  @ApiParam({ name: 'imageId', type: 'string', format: 'uuid', description: 'Live update image ID' })
+  @ApiOkResponse({ description: 'Image deleted' })
+  @ApiForbiddenResponse({ description: 'Only provider can delete live update images' })
+  @ApiNotFoundResponse({ description: 'Booking or image not found' })
+  async deleteLiveUpdateImage(
+    @GetUser() user: any,
+    @Param('bookingId') bookingId: string,
+    @Param('imageId') imageId: string,
+  ) {
+    await this.bookingsService.deleteLiveUpdateImage(bookingId, imageId, user.id);
+    return { success: true, message: 'Live update image deleted' };
   }
 
   @Get(':bookingId')

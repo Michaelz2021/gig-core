@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, UseGuards, Patch } from '@nestjs/common';
 import { ApiOkResponse, ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { MatchingService } from './matching.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
 import { CreateAuctionDto } from './dto/create-auction.dto';
 import { CreateAuctionBidDto } from './dto/create-auction-bid.dto';
+import { UpdateAuctionBidDto } from './dto/update-auction-bid.dto';
 import { CreateQuotationSessionDto } from './dto/create-quotation-session.dto';
 import { AddMessageToSessionDto } from './dto/add-message-to-session.dto';
 import { UpdateBidStatusDto } from './dto/update-bid-status.dto';
@@ -253,6 +254,21 @@ export class MatchingController {
   @ApiOkResponse({ description: 'Bid details returned' })
   findOneBid(@Param('id') id: string) {
     return this.matchingService.findOneBid(id);
+  }
+
+  @Put('auction-bids/:id')
+  @ApiOperation({
+    summary: 'Update bid',
+    description: 'Update your bid (proposedPrice, estimatedDuration, workPlan, portfolioItems, proposedStartDate, proposedCompletionDate, additionalComment). Only allowed for your own bid when status is submitted.',
+  })
+  @ApiParam({ name: 'id', description: 'Bid ID' })
+  @ApiOkResponse({ description: 'Bid updated successfully' })
+  updateBid(
+    @GetUser() user: any,
+    @Param('id') id: string,
+    @Body() updateDto: UpdateAuctionBidDto,
+  ) {
+    return this.matchingService.updateBid(id, user.id, updateDto);
   }
 
   @Patch('auction-bids/:bidId/status')

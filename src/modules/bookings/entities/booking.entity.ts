@@ -40,6 +40,19 @@ export enum BookingPayoutStatus {
   PAID = 'PAID',
 }
 
+/** booking.task JSONB 배열 요소 (service_task_templates 기반, 완료 추적) */
+export interface BookingTaskItem {
+  templateId: string;
+  taskCode: string;
+  taskLabel: string;
+  phase: number;
+  taskSeq: number;
+  actor: string;
+  isAuto: boolean;
+  completed: boolean;
+  completedAt: string | null;
+}
+
 @Entity('bookings')
 @Index(['bookingNumber'], { unique: true })
 export class Booking {
@@ -115,8 +128,9 @@ export class Booking {
   @Column({ name: 'service_description', type: 'text', nullable: true })
   serviceDescription?: string; // 서비스 설명
 
-  @Column({ name: 'task', type: 'text', nullable: true })
-  task?: string; // 서비스 작업 내용 (계약서에서 명문화될 수 있는 경우)
+  /** Service task template 기반 단계 배열. 각 항목: templateId, taskCode, taskLabel, phase, taskSeq, actor, isAuto, completed, completedAt */
+  @Column({ name: 'task', type: 'jsonb', nullable: true })
+  task?: BookingTaskItem[];
 
   // 상태 (DB booking_status_enum: pending_payment, pending_acceptance, confirmed, in_progress, awaiting_confirmation, awaiting_provider_sign, completed, cancelled, disputed)
   @Column({

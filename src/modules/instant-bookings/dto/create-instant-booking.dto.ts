@@ -10,10 +10,21 @@ import {
   Max,
   ValidateNested,
   IsOptional,
+  IsIn,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 
 export class LocationDto {
+  @ApiPropertyOptional({
+    example: 'home',
+    description: 'Location type: "home" (customer address) or "site" (other location). Accepts option or location.option.',
+    enum: ['home', 'site'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['home', 'site'])
+  option?: 'home' | 'site';
+
   @ApiProperty({ example: '123 Main St, Anytown, USA' })
   @IsString()
   @IsNotEmpty()

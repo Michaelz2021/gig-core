@@ -12,6 +12,10 @@ export class PaymentSession {
   @Column({ type: 'varchar', length: 50 })
   booking_id: string;
 
+  /** Instant order인 경우에만 설정. 정식 오더는 null */
+  @Column({ name: 'instant_booking_id', type: 'uuid', nullable: true })
+  instant_booking_id?: string | null;
+
   @Column({ type: 'varchar', length: 50 })
   buyer_id: string;
 

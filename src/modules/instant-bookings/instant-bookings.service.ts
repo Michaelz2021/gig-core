@@ -55,7 +55,7 @@ export class InstantBookingsService {
     const saved = await this.instantBookingRepository.save(entity);
 
     // [Instant Booking → FCM] 해당 카테고리의 service_listings provider 찾아 푸시 발송 (비동기, 실패해도 201 반환)
-    this.notifyProvidersForNewInstantBooking(saved.id, dto.serviceCategoryId, dto.timeSlot).catch((err) => {
+    this.notifyProvidersForNewInstantBooking(saved).catch((err) => {
       this.logger.error(`[InstantBooking Push] Failed bookingId=${saved.id}`, err?.stack || err?.message || err);
     });
     this.logger.log(`[InstantBooking] created bookingId=${saved.id} categoryId=${dto.serviceCategoryId} - provider FCM triggered`);
@@ -69,13 +69,14 @@ export class InstantBookingsService {
 
   /**
    * 요청된 category_id 기준으로 service_listings를 필터링 → provider_id 추출 → providers에서 user_id 조회
-   * → user_device_tokens에서 provider 앱 토큰 조회 → FCM 푸시 발송
+   * → user_device_tokens에서 provider 앱 토큰 조회 → FCM 푸시 발송 (location 포함).
+   * 실패한 토큰(invalid/not-registered)은 비활성화하여 재전송 방지.
    */
-  private async notifyProvidersForNewInstantBooking(
-    bookingId: string,
-    serviceCategoryId: string,
-    timeSlot: string,
-  ): Promise<void> {
+  private async notifyProvidersForNewInstantBooking(booking: InstantBooking): Promise<void> {
+    const bookingId = booking.id;
+    const serviceCategoryId = booking.serviceCategoryId;
+    const timeSlot = booking.timeSlot instanceof Date ? booking.timeSlot.toISOString() : String(booking.timeSlot);
+
     try {
       this.logger.log(`[InstantBooking Push] bookingId=${bookingId} categoryId=${serviceCategoryId} - step 1: finding listings...`);
 
@@ -117,8 +118,9 @@ export class InstantBookingsService {
       }
       this.logger.log(`[InstantBooking Push] bookingId=${bookingId} - step 3 done: tokens=${uniqueTokens.length}`);
 
-      this.logger.log(`[InstantBooking Push] bookingId=${bookingId} - step 4: sending FCM...`);
+      this.logger.log(`[InstantBooking Push] bookingId=${bookingId} - step 4: sending FCM (with location)...`);
       const timeLabel = timeSlot ? new Date(timeSlot).toLocaleString() : '';
+      const locationJson = booking.location ? JSON.stringify(booking.location) : '{}';
       const result = await this.fcmService.sendPushNotification(
         uniqueTokens,
         {
@@ -129,11 +131,29 @@ export class InstantBookingsService {
             booking_id: bookingId,
             service_category_id: serviceCategoryId,
             time_slot: timeSlot,
+            location_json: locationJson,
           },
         },
       );
 
-      this.logger.log(`[InstantBooking Push] bookingId=${bookingId} - step 4 done: success=${result.success} failure=${result.failure}${result.errors?.length ? ` errors=${JSON.stringify(result.errors)}` : ''}`);
+      if (result.errors?.length) {
+        for (const { token, error } of result.errors) {
+          const code = (error as { code?: string })?.code ?? (error as any)?.error?.code;
+          if (
+            code === 'messaging/invalid-registration-token' ||
+            code === 'messaging/registration-token-not-registered'
+          ) {
+            try {
+              await this.userDeviceTokenService.deactivateToken(token);
+              this.logger.log(`[InstantBooking Push] deactivated invalid token: ${token?.slice(0, 24)}...`);
+            } catch (e) {
+              this.logger.warn(`[InstantBooking Push] failed to deactivate token: ${e}`);
+            }
+          }
+        }
+      }
+
+      this.logger.log(`[InstantBooking Push] bookingId=${bookingId} - step 4 done: success=${result.success} failure=${result.failure}${result.errors?.length ? ` errors=${result.errors.length}` : ''}`);
     } catch (err) {
       this.logger.error(`[InstantBooking Push] bookingId=${bookingId} error`, err instanceof Error ? err.stack : String(err));
       throw err;

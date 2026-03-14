@@ -30,6 +30,10 @@ export class ServiceCategory {
   @Column({ name: 'display_order', default: 0 })
   displayOrder: number; // 표시 순서
 
+  /** Service task template용: HOME | EVENTS | FREELANCE | PERSONAL. NULL이면 예약 시 HOME 사용 */
+  @Column({ name: 'service_type', type: 'varchar', length: 20, nullable: true })
+  serviceType: string | null;
+
   @Column({ name: 'icon_url', type: 'text', nullable: true })
   iconUrl: string; // 아이콘 URL
 

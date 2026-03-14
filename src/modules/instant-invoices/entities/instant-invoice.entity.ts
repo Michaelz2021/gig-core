@@ -20,6 +20,15 @@ export class InstantInvoice {
   @Column({ name: 'provider_id', type: 'uuid' })
   providerId: string;
 
+  @Column({ name: 'listing_name', type: 'varchar', length: 500, nullable: true })
+  listingName: string | null;
+
+  @Column({ name: 'consumer_name', type: 'varchar', length: 255, nullable: true })
+  consumerName: string | null;
+
+  @Column({ name: 'provider_name', type: 'varchar', length: 255, nullable: true })
+  providerName: string | null;
+
   @Column({ name: 'instant_booking_id', type: 'uuid' })
   instantBookingId: string;
 
@@ -37,6 +46,10 @@ export class InstantInvoice {
 
   @Column({ name: 'service_lng', type: 'decimal', precision: 11, scale: 8, nullable: true })
   serviceLng: string | null;
+
+  /** 서비스 장소 옵션: Home | On Site */
+  @Column({ name: 'service_address_option', type: 'varchar', length: 20, nullable: true })
+  serviceAddressOption: string | null;
 
   @Column({ name: 'price_type', length: 20, default: 'FIXED' })
   priceType: string;

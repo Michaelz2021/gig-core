@@ -22,6 +22,7 @@ export class InstantBooking {
 
   @Column({ type: 'jsonb' })
   location: {
+    option?: 'home' | 'site';
     address: string;
     lat: number;
     lng: number;

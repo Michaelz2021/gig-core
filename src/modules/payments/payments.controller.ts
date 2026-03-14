@@ -209,6 +209,36 @@ export class PaymentsController {
     return this.paymentsService.initializePaymentSession(contractIdOrBookingNumber, user.id);
   }
 
+  /** Instant order 전용: instant_booking_id로 결제 세션 초기화. 정식 오더는 contracts/:contractId/initialize 사용. */
+  @Post('instant-bookings/:instantBookingId/initialize')
+  @ApiOperation({
+    summary: 'Initialize payment session for Instant order',
+    description:
+      'Create a payment session for an instant order by instant_booking_id. Use this for Instant orders; for regular orders use POST payment/contracts/:contractId/initialize. Requires an instant_invoice to exist for the instant booking (e.g. created after provider confirms).',
+  })
+  @ApiParam({ name: 'instantBookingId', description: 'Instant booking UUID' })
+  @ApiOkResponse({
+    description: 'Payment session initialized (same shape as contracts initialize)',
+    schema: {
+      type: 'object',
+      properties: {
+        payment_session_id: { type: 'string' },
+        contract_id: { type: 'string' },
+        booking_id: { type: 'string' },
+        amount: { type: 'number' },
+        breakdown: { type: 'object', properties: { service_cost: { type: 'number' }, platform_fee: { type: 'number' } } },
+        available_methods: { type: 'array' },
+        expires_at: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  initializePaymentSessionForInstant(
+    @GetUser() user: any,
+    @Param('instantBookingId') instantBookingId: string,
+  ) {
+    return this.paymentsService.initializePaymentSessionForInstantBooking(instantBookingId, user.id);
+  }
+
   // Payment Session Initialization by booking_number (계약서 없이 예약만 있는 경우)
   @Post('bookings/:bookingNumber/initialize')
   @ApiOperation({

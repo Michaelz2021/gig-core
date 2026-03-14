@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiBody, ApiOkResponse, ApiExtraModels } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, UseGuards, Query, BadRequestException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiBody, ApiOkResponse, ApiExtraModels, ApiQuery } from '@nestjs/swagger';
 import { getSchemaPath } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
@@ -19,10 +19,16 @@ export class InstantInvoicesController {
   @ApiOperation({
     summary: 'List my instant invoices',
     description:
-      'JWT user_id로 본인이 consumer이거나 provider인 instant invoice 목록 조회. consumer_id = user_id 또는 provider_id = (해당 user의 provider id). 최신순.',
+      'JWT 사용자 기준으로 instant invoice 목록 조회. user_type으로 consumer(주문한 내역) 또는 provider(받은 주문 내역) 중 하나를 지정해야 합니다. 최신순.',
+  })
+  @ApiQuery({
+    name: 'user_type',
+    required: true,
+    enum: ['consumer', 'provider'],
+    description: 'consumer: 내가 주문한 인보이스(consumer_id 기준). provider: 내가 받은 주문 인보이스(provider_id 기준).',
   })
   @ApiOkResponse({
-    description: '본인(consumer 또는 provider) 관련 instant invoice 목록. 최신순.',
+    description: '지정한 user_type에 해당하는 instant invoice 목록. 최신순.',
     schema: {
       type: 'object',
       properties: {
@@ -34,8 +40,19 @@ export class InstantInvoicesController {
       },
     },
   })
-  async findAll(@GetUser() user: { id: string }) {
-    const list = await this.instantInvoicesService.findAllByUserId(user.id);
+  async findAll(
+    @GetUser() user: { id: string },
+    @Query('user_type') userType: string,
+  ) {
+    if (!userType || !['consumer', 'provider'].includes(userType)) {
+      throw new BadRequestException(
+        'user_type query is required and must be "consumer" or "provider".',
+      );
+    }
+    const list = await this.instantInvoicesService.findAllByUserAndType(
+      user.id,
+      userType as 'consumer' | 'provider',
+    );
     return { success: true, data: list };
   }
 
@@ -61,6 +78,10 @@ export class InstantInvoicesController {
             payment_status: { type: 'string', example: 'pending' },
             booking_status: { type: 'string', example: 'confirmed' },
             created_at: { type: 'string', format: 'date-time' },
+            listing_name: { type: 'string', description: '서비스 리스팅명' },
+            consumer_name: { type: 'string', description: '주문자 표시명' },
+            provider_name: { type: 'string', description: '프로바이더 표시명' },
+            service_address_option: { type: 'string', enum: ['Home', 'On Site'], description: '서비스 장소 옵션' },
           },
         },
       },

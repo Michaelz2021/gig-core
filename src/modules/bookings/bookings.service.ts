@@ -2,13 +2,15 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Booking, BookingStatus } from './entities/booking.entity';
+import { Booking, BookingStatus, BookingTaskItem } from './entities/booking.entity';
 import { Contract } from './entities/contract.entity';
 import { SmartContract, SmartContractStatus } from './entities/smart-contract.entity';
 import { WorkProgressReport, ReportType } from './entities/work-progress-report.entity';
+import { LiveUpdateImage } from './entities/live-update-image.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateSmartContractDto } from './dto/create-smart-contract.dto';
 import { CreateWorkProgressReportDto } from './dto/create-work-progress-report.dto';
+import { CreateLiveUpdateImageDto } from './dto/create-live-update-image.dto';
 import { ProjectOrderStatsDto } from './dto/project-order-stats.dto';
 import { ServicesService } from '../services/services.service';
 import { UsersService } from '../users/users.service';
@@ -27,6 +29,8 @@ export class BookingsService {
     private readonly smartContractRepository: Repository<SmartContract>,
     @InjectRepository(WorkProgressReport)
     private readonly workProgressReportRepository: Repository<WorkProgressReport>,
+    @InjectRepository(LiveUpdateImage)
+    private readonly liveUpdateImageRepository: Repository<LiveUpdateImage>,
     @InjectRepository(Quote)
     private readonly quoteRepository: Repository<Quote>,
     @InjectRepository(Auction)
@@ -54,12 +58,28 @@ export class BookingsService {
     }
 
     const bookingNumber = this.generateBookingNumber();
+    const serviceType = await this.servicesService.getServiceTypeByCategoryId(service.categoryId ?? '');
+    const templates = await this.servicesService.findTemplatesByServiceType(serviceType);
+    const taskItems: BookingTaskItem[] = templates.map((t) => ({
+      templateId: t.id,
+      taskCode: t.taskCode,
+      taskLabel: t.taskLabel,
+      phase: t.phase,
+      taskSeq: t.taskSeq,
+      actor: t.actor,
+      isAuto: t.isAuto,
+      completed: false,
+      completedAt: null,
+    }));
+
+    const { task: _omit, ...restDto } = createBookingDto as CreateBookingDto & { task?: string };
     const booking = this.bookingRepository.create({
-      ...createBookingDto,
+      ...restDto,
       bookingNumber,
       consumerId,
       providerId: service.providerId,
       scheduledDate: new Date(createBookingDto.scheduledDate),
+      task: taskItems.length > 0 ? taskItems : undefined,
     });
 
     return this.bookingRepository.save(booking);
@@ -76,6 +96,7 @@ export class BookingsService {
       SELECT 
         a.id,
         a.consumer_id,
+        a.service_category_id,
         a.service_title,
         a.service_description,
         a.service_location,
@@ -139,6 +160,22 @@ export class BookingsService {
       scheduledEndDate.setDate(scheduledEndDate.getDate() + bidData.estimated_duration);
     }
 
+    // Service type 및 task 템플릿 (auction의 service_category_id 기준)
+    const categoryId = auctionData.service_category_id ?? '';
+    const serviceType = await this.servicesService.getServiceTypeByCategoryId(categoryId);
+    const templates = await this.servicesService.findTemplatesByServiceType(serviceType);
+    const taskItems: BookingTaskItem[] = templates.map((t) => ({
+      templateId: t.id,
+      taskCode: t.taskCode,
+      taskLabel: t.taskLabel,
+      phase: t.phase,
+      taskSeq: t.taskSeq,
+      actor: t.actor,
+      isAuto: t.isAuto,
+      completed: false,
+      completedAt: null,
+    }));
+
     // Booking 생성
     const bookingNumber = this.generateBookingNumber();
     const booking = this.bookingRepository.create({
@@ -163,6 +200,7 @@ export class BookingsService {
       auctionId: auctionId,
       auctionBidId: bidId,
       isInstantBooking: false,
+      task: taskItems.length > 0 ? taskItems : undefined,
     });
 
     return this.bookingRepository.save(booking);
@@ -801,6 +839,79 @@ export class BookingsService {
     const savedReport = await this.workProgressReportRepository.save(report);
 
     return savedReport;
+  }
+
+  /** Live Updates 이미지 목록 조회 (해당 booking의 모든 이미지, 최신순) */
+  async findAllLiveUpdateImages(bookingId: string): Promise<LiveUpdateImage[]> {
+    const booking = await this.bookingRepository.findOne({ where: { id: bookingId } });
+    if (!booking) {
+      throw new NotFoundException(`Booking with ID ${bookingId} not found`);
+    }
+    return this.liveUpdateImageRepository.find({
+      where: { bookingId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /** Live Updates 이미지 추가 (Provider만 가능, confirmed 또는 in_progress 상태만) */
+  async createLiveUpdateImage(
+    bookingId: string,
+    userId: string,
+    dto: CreateLiveUpdateImageDto,
+  ): Promise<LiveUpdateImage> {
+    const booking = await this.bookingRepository.findOne({
+      where: { id: bookingId },
+      relations: ['provider'],
+    });
+    if (!booking) {
+      throw new NotFoundException(`Booking with ID ${bookingId} not found`);
+    }
+    if (!booking.provider || booking.provider.userId !== userId) {
+      throw new ForbiddenException('Only the provider can add live update images');
+    }
+    if (
+      booking.status !== BookingStatus.IN_PROGRESS &&
+      booking.status !== BookingStatus.CONFIRMED
+    ) {
+      throw new BadRequestException(
+        `Cannot add live update image for booking with status: ${booking.status}. Only confirmed or in_progress.`,
+      );
+    }
+    const entity = this.liveUpdateImageRepository.create({
+      bookingId,
+      imageUrl: dto.imageUrl,
+    });
+    return this.liveUpdateImageRepository.save(entity);
+  }
+
+  /** Live Updates 이미지 삭제 (Provider만 가능) */
+  async deleteLiveUpdateImage(
+    bookingId: string,
+    imageId: string,
+    userId: string,
+  ): Promise<void> {
+    const booking = await this.bookingRepository.findOne({
+      where: { id: bookingId },
+      relations: ['provider'],
+    });
+    if (!booking) {
+      throw new NotFoundException(`Booking with ID ${bookingId} not found`);
+    }
+    if (!booking.provider || booking.provider.userId !== userId) {
+      throw new ForbiddenException('Only the provider can delete live update images');
+    }
+    const image = await this.liveUpdateImageRepository.findOne({
+      where: { id: imageId, bookingId },
+    });
+    if (!image) {
+      throw new NotFoundException(`Live update image with ID ${imageId} not found for this booking`);
+    }
+    await this.liveUpdateImageRepository.remove(image);
+  }
+
+  /** 워크 보고서 드롭다운용: service_type + actor로 필터한 task_code 목록 */
+  async getTaskCodesForDropdown(serviceType: string, actor: string = 'PROVIDER'): Promise<string[]> {
+    return this.servicesService.findTaskCodesByServiceTypeAndActor(serviceType, actor);
   }
 }
 

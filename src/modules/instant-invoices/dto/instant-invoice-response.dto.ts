@@ -16,6 +16,15 @@ export class InstantInvoiceResponseDto {
   @ApiProperty({ description: 'Provider ID (providers.id)' })
   providerId: string;
 
+  @ApiPropertyOptional({ description: '서비스 리스팅명 (출력용)' })
+  listingName: string | null;
+
+  @ApiPropertyOptional({ description: '주문자(소비자) 표시명' })
+  consumerName: string | null;
+
+  @ApiPropertyOptional({ description: '프로바이더 표시명' })
+  providerName: string | null;
+
   @ApiProperty({ description: 'Instant booking ID' })
   instantBookingId: string;
 
@@ -33,6 +42,9 @@ export class InstantInvoiceResponseDto {
 
   @ApiPropertyOptional({ nullable: true })
   serviceLng: string | null;
+
+  @ApiPropertyOptional({ enum: ['Home', 'On Site'], description: '서비스 장소 옵션' })
+  serviceAddressOption: string | null;
 
   @ApiProperty({ example: 'FIXED' })
   priceType: string;

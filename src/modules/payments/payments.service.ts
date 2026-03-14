@@ -13,6 +13,7 @@ import { WalletTopupDto, TopupPaymentMethod } from './dto/wallet-topup.dto';
 import { XenditProcessDto } from './dto/xendit-process.dto';
 import { BookingsService } from '../bookings/bookings.service';
 import { UsersService } from '../users/users.service';
+import { InstantInvoicesService } from '../instant-invoices/instant-invoices.service';
 import { XenditPaymentService } from './services/xendit-payment.service';
 import { XenditApiClient } from './services/xendit-api.client';
 
@@ -40,6 +41,7 @@ export class PaymentsService {
     private readonly payoutRepository: Repository<Payout>,
     private readonly bookingsService: BookingsService,
     private readonly usersService: UsersService,
+    private readonly instantInvoicesService: InstantInvoicesService,
     private readonly xenditPaymentService: XenditPaymentService,
     private readonly xenditApiClient: XenditApiClient,
   ) {}
@@ -328,6 +330,61 @@ export class PaymentsService {
       }
       throw e;
     }
+  }
+
+  /**
+   * Instant order 전용 결제 세션 초기화.
+   * instant_bookings가 아닌 instant_invoice를 instant_booking_id로 조회해 금액을 사용한다.
+   * 앱에서는 Instant 주문일 때 이 API를 호출하고, 정식 오더는 contracts/:contractId/initialize 사용.
+   */
+  async initializePaymentSessionForInstantBooking(instantBookingId: string, userId: string) {
+    const invoice = await this.instantInvoicesService.findOneByInstantBookingId(instantBookingId);
+    if (!invoice) {
+      throw new NotFoundException(
+        'Instant invoice not found for this instant booking. Create the invoice first (e.g. after provider confirms).',
+      );
+    }
+    if (invoice.consumerId !== userId) {
+      throw new ForbiddenException(
+        'Access denied. The authenticated user must be the consumer of this instant order.',
+      );
+    }
+    if (invoice.paymentStatus !== 'pending') {
+      throw new BadRequestException(
+        `Instant order payment status is "${invoice.paymentStatus}", not pending.`,
+      );
+    }
+
+    const existing = await this.paymentSessionRepository.findOne({
+      where: {
+        instant_booking_id: instantBookingId,
+        status: In(['PENDING', 'PROCESSING']),
+      },
+    });
+    if (existing && existing.expires_at && existing.expires_at > new Date()) {
+      return this.formatSessionResponse(existing);
+    }
+
+    const totalAmount = Number(invoice.totalAmount);
+    const platformFee = Number(invoice.platformFee);
+    const serviceAmount = Number(invoice.serviceAmount);
+
+    const sessionId = `PSESS-${Date.now()}`;
+    const session = this.paymentSessionRepository.create({
+      session_id: sessionId,
+      contract_id: instantBookingId,
+      booking_id: instantBookingId,
+      instant_booking_id: instantBookingId,
+      buyer_id: userId,
+      total_amount: totalAmount,
+      service_amount: serviceAmount,
+      platform_fee: platformFee,
+      status: 'PENDING',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+
+    await this.paymentSessionRepository.save(session);
+    return this.formatSessionResponse(session);
   }
 
   private async validateContract(

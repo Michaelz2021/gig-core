@@ -11,19 +11,21 @@ export class S3Service {
   private readonly region: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.region = this.configService.get<string>('AWS_REGION') || 'ap-southeast-1';
-    this.bucketName = this.configService.get<string>('AWS_S3_BUCKET') || '';
+    const get = (key: string): string =>
+      (this.configService.get<string>(key) ?? process.env[key] ?? '').trim();
+    this.region = get('AWS_REGION') || 'ap-southeast-1';
+    this.bucketName = get('AWS_S3_BUCKET') || '';
 
     this.s3Client = new S3Client({
       region: this.region,
       credentials: {
-        accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID') || '',
-        secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY') || '',
+        accessKeyId: get('AWS_ACCESS_KEY_ID') || '',
+        secretAccessKey: get('AWS_SECRET_ACCESS_KEY') || '',
       },
     });
 
     if (!this.bucketName) {
-      this.logger.warn('AWS_S3_BUCKET is not configured. S3 operations will fail.');
+      this.logger.warn('AWS_S3_BUCKET is not configured. S3 operations will fail. Set AWS_S3_BUCKET in .env or process environment.');
     }
   }
 
